@@ -80,12 +80,14 @@ export default function Onboarding() {
         main_brawler_icon_url: skipBrawler ? null : formData.mainBrawlerIconUrl || null
       }
 
-      const { error: updateError } = await supabase
+      const { error: upsertError } = await supabase
         .from('profiles')
-        .update(updatePayload)
-        .eq('id', userId)
+        .upsert({
+          id: userId,
+          ...updatePayload
+        })
 
-      if (updateError) throw updateError
+      if (upsertError) throw upsertError
 
       await refreshProfile()
       navigate('/')

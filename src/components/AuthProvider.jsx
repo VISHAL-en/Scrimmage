@@ -43,18 +43,29 @@ export function AuthProvider({ children }) {
         console.error('Error fetching profile:', error)
       }
       setProfile(data)
+      return data
     } catch (err) {
       console.error('Error in fetchProfile:', err)
+      return null
     } finally {
       setLoading(false)
     }
+  }
+
+  const refreshProfile = async () => {
+    const { data: { session: activeSession } } = await supabase.auth.getSession()
+    const targetUserId = activeSession?.user?.id || session?.user?.id
+    if (targetUserId) {
+      return await fetchProfile(targetUserId)
+    }
+    return null
   }
 
   const value = {
     session,
     profile,
     loading,
-    refreshProfile: () => session?.user && fetchProfile(session.user.id)
+    refreshProfile
   }
 
   return (
