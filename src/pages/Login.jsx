@@ -1,18 +1,32 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../components/AuthProvider'
 
 export default function Login() {
+  const { session, profile, loading: authLoading } = useAuth()
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
+  const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!authLoading && session) {
+      if (!profile || !profile.display_name) {
+        navigate('/onboarding', { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
+    }
+  }, [session, profile, authLoading, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
+    setMessage(null)
     setLoading(true)
 
     try {
@@ -24,7 +38,11 @@ export default function Login() {
 
         if (signUpError) throw signUpError
 
-        if (data.user) {
+        // If email confirmation is required, data.session is null while data.user exists
+        if (data.user && !data.session) {
+          setMessage('Check your email to verify your account before logging in.')
+          setPassword('')
+        } else if (data.session) {
           navigate('/onboarding')
         }
       } else {
@@ -121,7 +139,11 @@ export default function Login() {
                 <div className="flex gap-4 mt-2">
                   <button
                     type="button"
-                    onClick={() => setIsSignUp(false)}
+                    onClick={() => {
+                      setIsSignUp(false)
+                      setError(null)
+                      setMessage(null)
+                    }}
                     className={`font-headline-sm uppercase text-xl cursor-pointer ${
                       !isSignUp ? 'border-b-4 border-ink-black text-ink-black' : 'text-ink-black/40'
                     } pb-1`}
@@ -130,7 +152,11 @@ export default function Login() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsSignUp(true)}
+                    onClick={() => {
+                      setIsSignUp(true)
+                      setError(null)
+                      setMessage(null)
+                    }}
                     className={`font-headline-sm uppercase text-xl cursor-pointer ${
                       isSignUp ? 'border-b-4 border-ink-black text-ink-black' : 'text-ink-black/40'
                     } pb-1`}
@@ -167,6 +193,13 @@ export default function Login() {
                       placeholder="••••••••"
                     />
                   </div>
+
+                  {message && (
+                    <div className="text-ink-black font-label-bold mt-2 bg-acid-green p-3 border-2 border-ink-black shadow-tape rotate-1 flex items-center gap-2 font-bold">
+                      <span className="text-lg">✓</span>
+                      <span>{message}</span>
+                    </div>
+                  )}
 
                   {error && (
                     <div className="text-battle-red font-label-bold mt-2 bg-[#FFE5E7] p-2 border-2 border-ink-black shadow-tape rotate-1">
