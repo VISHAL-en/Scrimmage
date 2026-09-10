@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../components/AuthProvider'
 import Navigation from '../components/Navigation'
 import LobbyCard from '../components/LobbyCard'
+import JoinByCode from '../components/JoinByCode'
 
 export default function Dashboard() {
   const { session, profile } = useAuth()
@@ -130,6 +131,13 @@ export default function Dashboard() {
               >
                 CREATE SQUAD / TEAM
               </Link>
+
+              <div className="pt-2 border-t-2 border-dashed border-ink-black flex flex-col gap-1.5">
+                <span className="font-label-bold text-xs uppercase text-on-surface-variant font-bold">
+                  JOIN VIA CODE:
+                </span>
+                <JoinByCode placeholder="6-DIGIT CODE" compact={true} />
+              </div>
             </div>
           </div>
         </section>

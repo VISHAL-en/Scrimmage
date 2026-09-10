@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import Navigation from '../components/Navigation'
 import LobbyCard from '../components/LobbyCard'
+import JoinByCode from '../components/JoinByCode'
 
 export default function OpenLobbyBoard() {
   const [lobbies, setLobbies] = useState([])
@@ -94,48 +95,59 @@ export default function OpenLobbyBoard() {
           </Link>
         </header>
 
-        {/* Filter Controls */}
-        <div className="flex flex-wrap gap-4 items-center justify-between border-b-4 border-ink-black pb-4">
-          {/* Type Filters */}
-          <div className="flex flex-wrap gap-2">
-            {['ALL', 'FRIENDLY', 'POWER LEAGUE'].map((tab, idx) => {
-              const active = typeFilter === tab
-              const rotation = idx % 2 === 0 ? '-rotate-1' : 'rotate-1'
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setTypeFilter(tab)}
-                  className={`px-4 py-2 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-tape transition-all cursor-pointer font-bold ${rotation} ${
-                    active
-                      ? 'bg-scream-yellow text-ink-black'
-                      : 'bg-white text-on-surface-variant hover:bg-[#FAF5EA]'
-                  }`}
-                >
-                  {tab}
-                </button>
-              )
-            })}
+        {/* Filter & Join Controls */}
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between border-b-4 border-ink-black pb-4">
+          {/* Filters (Type + Slots) */}
+          <div className="flex flex-wrap gap-4 items-center">
+            {/* Type Filters */}
+            <div className="flex flex-wrap gap-2">
+              {['ALL', 'FRIENDLY', 'POWER LEAGUE'].map((tab, idx) => {
+                const active = typeFilter === tab
+                const rotation = idx % 2 === 0 ? '-rotate-1' : 'rotate-1'
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setTypeFilter(tab)}
+                    className={`px-4 py-2 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-tape transition-all cursor-pointer font-bold ${rotation} ${
+                      active
+                        ? 'bg-scream-yellow text-ink-black'
+                        : 'bg-white text-on-surface-variant hover:bg-[#FAF5EA]'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Slot Filters */}
+            <div className="flex items-center gap-2">
+              <span className="font-label-bold text-xs uppercase text-on-surface-variant font-bold">Slots:</span>
+              {['ALL', 'OPEN'].map((sTab) => {
+                const active = slotFilter === sTab
+                return (
+                  <button
+                    key={sTab}
+                    type="button"
+                    onClick={() => setSlotFilter(sTab)}
+                    className={`px-3 py-1 font-headline-sm text-xs uppercase border border-ink-black cursor-pointer font-bold ${
+                      active ? 'bg-ink-black text-white' : 'bg-white text-on-surface-variant hover:bg-[#FAF5EA]'
+                    }`}
+                  >
+                    {sTab}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          {/* Slot Filters */}
-          <div className="flex items-center gap-2">
-            <span className="font-label-bold text-xs uppercase text-on-surface-variant font-bold">Slots:</span>
-            {['ALL', 'OPEN'].map((sTab) => {
-              const active = slotFilter === sTab
-              return (
-                <button
-                  key={sTab}
-                  type="button"
-                  onClick={() => setSlotFilter(sTab)}
-                  className={`px-3 py-1 font-headline-sm text-xs uppercase border border-ink-black cursor-pointer font-bold ${
-                    active ? 'bg-ink-black text-white' : 'bg-white text-on-surface-variant hover:bg-[#FAF5EA]'
-                  }`}
-                >
-                  {sTab}
-                </button>
-              )
-            })}
+          {/* Join Via Code */}
+          <div className="flex items-center gap-2 self-stretch md:self-auto">
+            <span className="font-label-bold text-xs uppercase text-on-surface-variant font-bold hidden sm:inline">
+              JOIN VIA CODE:
+            </span>
+            <JoinByCode placeholder="6-DIGIT CODE" compact={false} />
           </div>
         </div>
 

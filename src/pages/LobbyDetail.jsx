@@ -48,6 +48,14 @@ export default function LobbyDetail() {
   const [savingCode, setSavingCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
   const [codeError, setCodeError] = useState(null)
+  const [copiedJoinCode, setCopiedJoinCode] = useState(false)
+
+  const handleCopyJoinCode = () => {
+    if (!lobby?.join_code) return
+    navigator.clipboard.writeText(lobby.join_code)
+    setCopiedJoinCode(true)
+    setTimeout(() => setCopiedJoinCode(false), 2000)
+  }
 
   const chatEndRef = useRef(null)
 
@@ -86,6 +94,7 @@ export default function LobbyDetail() {
           notes,
           host_id,
           team_id,
+          join_code,
           profiles:host_id ( id, display_name, main_brawler_name, main_brawler_icon_url, brawl_tag ),
           teams:team_id ( id, name, tag )
         `)
@@ -599,6 +608,27 @@ export default function LobbyDetail() {
               </div>
 
               <div className="h-0.5 w-full bg-ink-black/20 my-1"></div>
+
+              {lobby.join_code && (
+                <div className="bg-[#FAF5EA] border-2 border-ink-black px-4 py-3 shadow-tape flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-battle-red font-bold text-base">⚡</span>
+                    <span className="font-label-bold text-xs uppercase text-on-surface-variant font-bold">
+                      JOIN CODE:
+                    </span>
+                    <span className="font-headline-sm text-xl uppercase tracking-widest text-ink-black font-bold select-all bg-white px-3 py-1 border-2 border-ink-black shadow-tape">
+                      {lobby.join_code}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyJoinCode}
+                    className="bg-scream-yellow hover:bg-white text-ink-black border-2 border-ink-black px-4 py-1.5 font-headline-sm text-xs uppercase shadow-tape hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold tracking-wider"
+                  >
+                    {copiedJoinCode ? 'COPIED! ✓' : 'COPY CODE'}
+                  </button>
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-4 font-label-bold text-label-bold uppercase text-on-surface-variant text-sm">
                 <span className="bg-scream-yellow text-ink-black px-2 py-0.5 border border-ink-black">
