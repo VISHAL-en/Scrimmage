@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthProvider'
 import Login from './pages/Login'
@@ -18,6 +19,29 @@ import Terms from './pages/Terms'
 import Admin from './pages/Admin'
 import Landing from './pages/Landing'
 import NotFound from './pages/NotFound'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
+  return null
+}
+
+function PageTransitionLayout({ children }) {
+  const location = useLocation()
+
+  return (
+    <div
+      key={location.pathname}
+      className="animate-content-settle min-h-screen flex flex-col flex-1 bg-transparent overflow-x-hidden"
+    >
+      {children}
+    </div>
+  )
+}
 
 function HomeRoute() {
   const { session, profile, loading } = useAuth()
@@ -87,128 +111,131 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route 
-            path="/onboarding" 
-            element={
-              <RequireAuth>
-                <Onboarding />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/board" 
-            element={
-              <RequireAuth>
-                <OpenLobbyBoard />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/teams" 
-            element={
-              <RequireAuth>
-                <TeamDirectory />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/teams/new" 
-            element={
-              <RequireAuth>
-                <CreateTeam />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/team/:id" 
-            element={
-              <RequireAuth>
-                <TeamProfile />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/matches" 
-            element={
-              <RequireAuth>
-                <MatchHistory />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/match/:id" 
-            element={
-              <RequireAuth>
-                <MatchDetail />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/my-lobbies" 
-            element={
-              <RequireAuth>
-                <MyLobbies />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/create-lobby" 
-            element={
-              <RequireAuth>
-                <CreateLobby />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/settings" 
-            element={
-              <RequireAuth>
-                <Settings />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/player/:id" 
-            element={
-              <RequireAuth>
-                <PlayerProfile />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/profile" 
-            element={
-              <RequireAuth>
-                <PlayerProfile />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/lobby/:id" 
-            element={
-              <RequireAuth>
-                <LobbyDetail />
-              </RequireAuth>
-            } 
-          />
-          <Route 
-            path="/" 
-            element={<HomeRoute />} 
-          />
-          <Route 
-            path="/admin" 
-            element={
-              <RequireAdmin>
-                <Admin />
-              </RequireAdmin>
-            } 
-          />
-          <Route path="/terms" element={<Terms />} />
-          {/* Fallback route for all unmatched URLs */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <ScrollToTop />
+        <PageTransitionLayout>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route 
+              path="/onboarding" 
+              element={
+                <RequireAuth>
+                  <Onboarding />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/board" 
+              element={
+                <RequireAuth>
+                  <OpenLobbyBoard />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/teams" 
+              element={
+                <RequireAuth>
+                  <TeamDirectory />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/teams/new" 
+              element={
+                <RequireAuth>
+                  <CreateTeam />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/team/:id" 
+              element={
+                <RequireAuth>
+                  <TeamProfile />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/matches" 
+              element={
+                <RequireAuth>
+                  <MatchHistory />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/match/:id" 
+              element={
+                <RequireAuth>
+                  <MatchDetail />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/my-lobbies" 
+              element={
+                <RequireAuth>
+                  <MyLobbies />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/create-lobby" 
+              element={
+                <RequireAuth>
+                  <CreateLobby />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/settings" 
+              element={
+                <RequireAuth>
+                  <Settings />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/player/:id" 
+              element={
+                <RequireAuth>
+                  <PlayerProfile />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/profile" 
+              element={
+                <RequireAuth>
+                  <PlayerProfile />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/lobby/:id" 
+              element={
+                <RequireAuth>
+                  <LobbyDetail />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/" 
+              element={<HomeRoute />} 
+            />
+            <Route 
+              path="/admin" 
+              element={
+                <RequireAdmin>
+                  <Admin />
+                </RequireAdmin>
+              } 
+            />
+            <Route path="/terms" element={<Terms />} />
+            {/* Fallback route for all unmatched URLs */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </PageTransitionLayout>
       </Router>
     </AuthProvider>
   )

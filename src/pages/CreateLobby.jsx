@@ -232,7 +232,7 @@ export default function CreateLobby() {
   }
 
   return (
-    <div className="min-h-screen text-ink-black font-body-md flex flex-col relative overflow-x-hidden selection:bg-scream-yellow selection:text-ink-black bg-paper-cream">
+    <div className="min-h-screen text-ink-black font-body-md flex flex-col relative overflow-x-hidden selection:bg-scream-yellow selection:text-ink-black">
       {/* Shared Navigation */}
       <Navigation />
 
