@@ -16,7 +16,29 @@ import PlayerProfile from './pages/PlayerProfile'
 import LobbyDetail from './pages/LobbyDetail'
 import Terms from './pages/Terms'
 import Admin from './pages/Admin'
+import Landing from './pages/Landing'
 import NotFound from './pages/NotFound'
+
+function HomeRoute() {
+  const { session, profile, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-paper-cream">
+        <div className="font-headline-lg text-ink-black animate-pulse uppercase text-4xl">Loading...</div>
+      </div>
+    )
+  }
+
+  if (session) {
+    if (!profile || !profile.display_name) {
+      return <Navigate to="/onboarding" replace />
+    }
+    return <Dashboard />
+  }
+
+  return <Landing />
+}
 
 function RequireAuth({ children }) {
   const { session, profile, loading } = useAuth()
@@ -173,11 +195,7 @@ export default function App() {
           />
           <Route 
             path="/" 
-            element={
-              <RequireAuth>
-                <Dashboard />
-              </RequireAuth>
-            } 
+            element={<HomeRoute />} 
           />
           <Route 
             path="/admin" 

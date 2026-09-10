@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../components/AuthProvider'
 import Navigation from '../components/Navigation'
-import { getAllMaps } from '../lib/maps'
+import { getAllMaps, getModeInfo, MODE_CONFIG } from '../lib/maps'
 import { formatActionError } from '../lib/authErrors'
 import dayjs from 'dayjs'
+import { Search, X, Check, MapPin, Trophy } from 'lucide-react'
 
 export default function CreateLobby() {
   const { session, profile } = useAuth()
@@ -22,7 +23,11 @@ export default function CreateLobby() {
   const [selectedTeamId, setSelectedTeamId] = useState('')
   const [notes, setNotes] = useState('')
 
-  // Data
+  // Map Filter & Search State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeMode, setActiveMode] = useState('All')
+
+  // Data State
   const [availableMaps, setAvailableMaps] = useState([])
   const [userTeams, setUserTeams] = useState([])
   const [loadingMaps, setLoadingMaps] = useState(false)
@@ -67,6 +72,97 @@ export default function CreateLobby() {
       setSelectedMaps([...selectedMaps, mapItem])
     }
   }
+
+  // 1. Calculate map count per mode
+  const modeCounts = useMemo(() => {
+    const counts = {}
+    availableMaps.forEach((m) => {
+      const mode = m.mode || 'Custom'
+      counts[mode] = (counts[mode] || 0) + 1
+    })
+    return counts
+  }, [availableMaps])
+
+  // 2. Filter available maps by search and active mode
+  const filteredMaps = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return availableMaps.filter((m) => {
+      const mapName = (m.map_name || m.name || '').toLowerCase()
+      const mapMode = (m.mode || '').toLowerCase()
+
+      const matchesSearch = !q || mapName.includes(q) || mapMode.includes(q)
+      const matchesMode = activeMode === 'All' || m.mode === activeMode
+
+      return matchesSearch && matchesMode
+    })
+  }, [availableMaps, searchQuery, activeMode])
+
+  // 3. Group filtered maps by game mode in structured sections
+  const groupedModeSections = useMemo(() => {
+    const groups = {}
+    filteredMaps.forEach((mapItem) => {
+      const mode = mapItem.mode || 'Custom'
+      if (!groups[mode]) {
+        groups[mode] = []
+      }
+      groups[mode].push(mapItem)
+    })
+
+    const priorityOrder = [
+      'Knockout',
+      'Bounty',
+      'Gem Grab',
+      'Brawl Ball',
+      'Hot Zone',
+      'Heist',
+      'Wipeout',
+      'Duels',
+      'Siege',
+      'Showdown',
+      'Custom'
+    ]
+
+    return Object.keys(groups)
+      .sort((a, b) => {
+        const idxA = priorityOrder.indexOf(a)
+        const idxB = priorityOrder.indexOf(b)
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB
+        if (idxA !== -1) return -1
+        if (idxB !== -1) return 1
+        return a.localeCompare(b)
+      })
+      .map((mode) => ({
+        mode,
+        modeInfo: getModeInfo(mode),
+        maps: groups[mode]
+      }))
+  }, [filteredMaps])
+
+  // Available filter modes list
+  const filterModes = useMemo(() => {
+    const uniqueModes = Array.from(new Set(availableMaps.map((m) => m.mode || 'Custom')))
+    const priorityOrder = [
+      'Knockout',
+      'Bounty',
+      'Gem Grab',
+      'Brawl Ball',
+      'Hot Zone',
+      'Heist',
+      'Wipeout',
+      'Duels',
+      'Siege',
+      'Showdown',
+      'Custom'
+    ]
+    return uniqueModes.sort((a, b) => {
+      const idxA = priorityOrder.indexOf(a)
+      const idxB = priorityOrder.indexOf(b)
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB
+      if (idxA !== -1) return -1
+      if (idxB !== -1) return 1
+      return a.localeCompare(b)
+    })
+  }, [availableMaps])
 
   const handleCreateLobby = async (e) => {
     if (e) e.preventDefault()
@@ -136,21 +232,21 @@ export default function CreateLobby() {
   }
 
   return (
-    <div className="min-h-screen text-ink-black font-body-md flex flex-col relative overflow-x-hidden selection:bg-scream-yellow selection:text-ink-black">
+    <div className="min-h-screen text-ink-black font-body-md flex flex-col relative overflow-x-hidden selection:bg-scream-yellow selection:text-ink-black bg-paper-cream">
       {/* Shared Navigation */}
       <Navigation />
 
       {/* Main Content */}
-      <main className="flex-grow max-w-4xl mx-auto px-margin-mobile md:px-margin-desktop py-12 w-full">
+      <main className="flex-grow max-w-5xl mx-auto px-margin-mobile md:px-margin-desktop py-8 md:py-12 w-full">
         {/* Title */}
-        <div className="mb-10 relative">
+        <div className="mb-8 relative">
           <div className="bg-scream-yellow text-ink-black border-2 border-ink-black px-3.5 py-1 font-headline-sm text-xs uppercase -rotate-2 w-max shadow-tape mb-3 flex items-center gap-1.5 font-bold">
             <span className="text-battle-red font-bold">⚡</span>
             <span>HOST SCRIM SETUP</span>
           </div>
 
           <h1
-            className="font-display-xl text-5xl sm:text-7xl uppercase tracking-tighter text-battle-red leading-none"
+            className="font-display-xl text-4xl sm:text-6xl md:text-7xl uppercase tracking-tighter text-battle-red leading-none"
             style={{ WebkitTextStroke: '2px #181716', textShadow: '4px 4px 0 #181716' }}
           >
             CREATE <span className="text-scream-yellow">LOBBY.</span>
@@ -193,16 +289,16 @@ export default function CreateLobby() {
         {/* STEP 1: Format, Slots, and Schedule */}
         {step === 1 && (
           <div
-            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform rotate-1 flex flex-col gap-6"
+            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform rotate-0.5 flex flex-col gap-6"
             style={{
               clipPath:
-                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+                'polygon(0 0, 100% 0, 100% 98%, 95% 100%, 90% 98%, 85% 100%, 80% 98%, 75% 100%, 70% 98%, 65% 100%, 60% 98%, 55% 100%, 50% 98%, 45% 100%, 40% 98%, 35% 100%, 30% 98%, 25% 100%, 20% 98%, 15% 100%, 10% 98%, 5% 100%, 0 98%)'
             }}
           >
             {/* Match Type */}
             <div className="flex flex-col gap-2">
               <label className="font-headline-sm text-sm uppercase text-ink-black font-bold">1. MATCH TYPE</label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button
                   type="button"
                   onClick={() => setMatchType('friendly')}
@@ -298,94 +394,258 @@ export default function CreateLobby() {
           </div>
         )}
 
-        {/* STEP 2: Map Set Selection */}
+        {/* STEP 2: Enhanced Map Rotation Selector with Search, Filter Tabs & Grouped Mode Sections */}
         {step === 2 && (
           <div
-            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform -rotate-1 flex flex-col gap-6"
+            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform rotate-0 flex flex-col gap-6"
             style={{
               clipPath:
-                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+                'polygon(0 0, 100% 0, 100% 98%, 95% 100%, 90% 98%, 85% 100%, 80% 98%, 75% 100%, 70% 98%, 65% 100%, 60% 98%, 55% 100%, 50% 98%, 45% 100%, 40% 98%, 35% 100%, 30% 98%, 25% 100%, 20% 98%, 15% 100%, 10% 98%, 5% 100%, 0 98%)'
             }}
           >
-            <div className="flex justify-between items-center border-b-2 border-dashed border-ink-black/40 pb-3">
+            {/* Top Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b-2 border-dashed border-ink-black/40 pb-4">
               <div>
-                <h2 className="font-headline-sm text-xl uppercase text-ink-black font-bold">DRAFT MAP SET</h2>
-                <p className="font-body-md text-xs text-on-surface-variant font-bold">
-                  Select 1 to 5 maps from the live Brawl Stars rotation.
+                <h2 className="font-headline-sm text-2xl uppercase text-ink-black font-bold">DRAFT MAP SET</h2>
+                <p className="font-body-md text-xs sm:text-sm text-on-surface-variant font-bold">
+                  Select 1 to 7 maps from the live rotation. Search or filter by game mode.
                 </p>
               </div>
-              <span className="bg-scream-yellow text-ink-black px-3 py-1 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-tape font-bold">
-                {selectedMaps.length} SELECTED
+              <span className={`px-3.5 py-1.5 font-headline-sm text-xs sm:text-sm uppercase border-2 border-ink-black shadow-tape font-bold ${
+                selectedMaps.length > 0 ? 'bg-scream-yellow text-ink-black -rotate-1' : 'bg-paper-cream text-on-surface-variant'
+              }`}>
+                {selectedMaps.length} / 7 SELECTED
               </span>
             </div>
 
-            {loadingMaps ? (
-              <div className="py-12 text-center font-headline-sm text-lg uppercase animate-pulse text-ink-black font-bold">
-                LOADING LIVE MAPS...
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[420px] overflow-y-auto p-2">
-                {availableMaps.map((mapItem) => {
-                  const isSelected = selectedMaps.some((m) => m.id === mapItem.id)
-                  const mapIdx = selectedMaps.findIndex((m) => m.id === mapItem.id)
+            {/* Selected Maps Tray (Shows drafted order) */}
+            {selectedMaps.length > 0 && (
+              <div className="bg-paper-cream border-2 border-ink-black p-3.5 shadow-hard-sm">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-headline-sm text-xs uppercase text-ink-black font-bold flex items-center gap-1.5">
+                    <span className="text-battle-red">⚡</span>
+                    SELECTED DRAFT ORDER ({selectedMaps.length}):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMaps([])}
+                    className="text-[11px] font-label-bold uppercase text-battle-red hover:underline font-bold"
+                  >
+                    Clear All
+                  </button>
+                </div>
 
-                  return (
-                    <button
-                      key={mapItem.id}
-                      type="button"
-                      onClick={() => handleMapToggle(mapItem)}
-                      className={`border-2 border-ink-black p-3 text-left flex flex-col gap-2 transition-all cursor-pointer relative ${
-                        isSelected
-                          ? 'bg-scream-yellow text-ink-black shadow-hard scale-102 z-10 font-bold'
-                          : 'bg-[#FAF5EA] text-ink-black hover:bg-white shadow-tape'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 bg-battle-red text-white text-xs font-headline-sm w-6 h-6 rounded-full flex items-center justify-center border border-ink-black shadow-tape font-bold">
-                          {mapIdx + 1}
-                        </div>
-                      )}
-
-                      <div className="w-full h-24 bg-ink-black/10 border border-ink-black overflow-hidden relative">
-                        <img
-                          src={mapItem.imageUrl}
-                          alt={mapItem.map_name || mapItem.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.src = 'https://cdn.brawlify.com/maps/regular/15000007.png'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <span className="bg-white px-2 py-0.5 border border-ink-black text-[10px] font-label-bold uppercase font-bold text-ink-black">
-                          {mapItem.mode || '3V3'}
+                <div className="flex flex-wrap gap-2">
+                  {selectedMaps.map((m, idx) => {
+                    const modeInfo = getModeInfo(m.mode)
+                    return (
+                      <div
+                        key={m.id}
+                        className="bg-white border-2 border-ink-black px-2.5 py-1 flex items-center gap-2 shadow-tape text-xs font-headline-sm uppercase font-bold"
+                      >
+                        <span className="bg-battle-red text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                          {idx + 1}
                         </span>
-                        <div className="font-headline-sm text-sm uppercase truncate mt-1 text-ink-black font-bold">
-                          {mapItem.map_name || mapItem.name}
-                        </div>
+                        <span className="truncate max-w-[140px] text-ink-black">{m.map_name || m.name}</span>
+                        <span className="text-[10px] text-on-surface-variant font-medium">({modeInfo.icon})</span>
+                        <button
+                          type="button"
+                          onClick={() => handleMapToggle(m)}
+                          className="text-ink-black/50 hover:text-battle-red font-bold text-xs ml-1"
+                        >
+                          ✕
+                        </button>
                       </div>
-                    </button>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
 
+            {/* 1. Search Bar */}
+            <div className="relative w-full">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-ink-black/60">
+                <Search className="w-4 h-4 stroke-[2.5]" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search maps (e.g. Belle's Rock, Goldarm, Shooting Star)..."
+                className="w-full pl-10 pr-10 py-3 bg-[#FAF5EA] border-2 border-ink-black font-body-md text-sm text-ink-black font-bold placeholder-ink-black/50 focus:bg-scream-yellow/20 focus:outline-none shadow-tape"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-ink-black hover:text-battle-red font-bold text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* 2. Filter Tabs (Horizontal Chips) */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 -mt-2">
+              <button
+                type="button"
+                onClick={() => setActiveMode('All')}
+                className={`px-3.5 py-1.5 border-2 border-ink-black font-headline-sm text-xs uppercase flex items-center gap-1.5 flex-shrink-0 cursor-pointer transition-all font-bold ${
+                  activeMode === 'All'
+                    ? 'bg-scream-yellow text-ink-black shadow-hard -rotate-1 font-black'
+                    : 'bg-white text-on-surface-variant hover:text-ink-black hover:bg-[#FAF5EA] shadow-tape'
+                }`}
+              >
+                <span>ALL</span>
+                <span className="text-[10px] opacity-75 font-normal">({availableMaps.length})</span>
+              </button>
+
+              {filterModes.map((mode) => {
+                const info = getModeInfo(mode)
+                const count = modeCounts[mode] || 0
+                const isActive = activeMode === mode
+
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setActiveMode(mode)}
+                    className={`px-3.5 py-1.5 border-2 border-ink-black font-headline-sm text-xs uppercase flex items-center gap-1.5 flex-shrink-0 cursor-pointer transition-all font-bold ${
+                      isActive
+                        ? 'bg-scream-yellow text-ink-black shadow-hard -rotate-1 font-black'
+                        : 'bg-white text-on-surface-variant hover:text-ink-black hover:bg-[#FAF5EA] shadow-tape'
+                    }`}
+                  >
+                    <span>{info.icon}</span>
+                    <span>{mode}</span>
+                    <span className="text-[10px] opacity-75 font-normal">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* 3. Grouped Mode Sections & Map Cards */}
+            {loadingMaps ? (
+              <div className="py-16 text-center font-headline-sm text-lg uppercase animate-pulse text-ink-black font-bold">
+                LOADING LIVE MAPS...
+              </div>
+            ) : groupedModeSections.length === 0 ? (
+              <div className="py-12 bg-paper-cream border-2 border-dashed border-ink-black/40 text-center flex flex-col items-center justify-center p-6">
+                <p className="font-headline-sm text-lg uppercase text-ink-black font-bold mb-1">
+                  NO MAPS FOUND
+                </p>
+                <p className="font-body-md text-xs text-on-surface-variant font-medium mb-4">
+                  No maps match "{searchQuery}" in {activeMode === 'All' ? 'any mode' : activeMode}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setActiveMode('All')
+                  }}
+                  className="bg-scream-yellow text-ink-black border-2 border-ink-black px-4 py-2 font-headline-sm text-xs uppercase font-bold shadow-tape hover:rotate-1"
+                >
+                  CLEAR SEARCH & FILTERS
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6 max-h-[500px] overflow-y-auto p-1 pr-2">
+                {groupedModeSections.map(({ mode, modeInfo, maps }) => (
+                  <div key={mode} className="flex flex-col gap-3">
+                    {/* Mode Header Banner */}
+                    <div className="flex items-center justify-between border-b-2 border-ink-black pb-1.5 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{modeInfo.icon}</span>
+                        <h3 className="font-headline-sm text-base uppercase text-ink-black font-bold tracking-wide">
+                          {mode}
+                        </h3>
+                        <span className="bg-paper-cream border border-ink-black px-2 py-0.5 text-[11px] font-label-bold font-bold shadow-tape">
+                          {maps.length} {maps.length === 1 ? 'MAP' : 'MAPS'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Responsive Grid of Map Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                      {maps.map((mapItem) => {
+                        const isSelected = selectedMaps.some((m) => m.id === mapItem.id)
+                        const mapIdx = selectedMaps.findIndex((m) => m.id === mapItem.id)
+
+                        return (
+                          <button
+                            key={mapItem.id}
+                            type="button"
+                            onClick={() => handleMapToggle(mapItem)}
+                            className={`border-2 border-ink-black p-3 text-left flex flex-col justify-between gap-2.5 transition-all cursor-pointer relative group ${
+                              isSelected
+                                ? 'bg-scream-yellow text-ink-black shadow-hard scale-[1.02] z-10 font-bold -rotate-0.5'
+                                : 'bg-[#FAF5EA] text-ink-black hover:bg-white shadow-tape hover:-translate-y-0.5'
+                            }`}
+                          >
+                            {/* Selected Order Badge */}
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 bg-battle-red text-white text-xs font-headline-sm w-6 h-6 rounded-full flex items-center justify-center border border-ink-black shadow-tape font-bold z-20">
+                                {mapIdx + 1}
+                              </div>
+                            )}
+
+                            {/* Map Image Thumbnail */}
+                            <div className="w-full h-28 bg-ink-black/10 border border-ink-black overflow-hidden relative">
+                              <img
+                                src={mapItem.imageUrl}
+                                alt={mapItem.map_name || mapItem.name}
+                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                onError={(e) => {
+                                  e.target.src = 'https://cdn.brawlify.com/maps/regular/15000007.png'
+                                }}
+                              />
+                            </div>
+
+                            {/* Map Name & Mode Badge */}
+                            <div className="flex flex-col gap-1 w-full">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className={`px-2 py-0.5 border border-ink-black text-[10px] font-label-bold uppercase font-bold ${
+                                  isSelected ? 'bg-white text-ink-black' : 'bg-paper-cream text-ink-black'
+                                }`}>
+                                  {modeInfo.icon} {mapItem.mode || '3V3'}
+                                </span>
+                              </div>
+
+                              <div className="font-headline-sm text-sm uppercase truncate text-ink-black font-bold tracking-tight">
+                                {mapItem.map_name || mapItem.name}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Step 2 Bottom Navigation Controls */}
             <div className="flex justify-between pt-4 border-t-2 border-dashed border-ink-black/30">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="bg-[#FAF5EA] text-ink-black py-3 px-6 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-hard-sm hover:bg-white font-bold"
+                className="bg-[#FAF5EA] text-ink-black py-3 px-6 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-hard-sm hover:bg-white font-bold cursor-pointer"
               >
                 ← BACK
               </button>
 
               <button
                 type="button"
-                onClick={() => setStep(3)}
+                onClick={() => {
+                  if (selectedMaps.length === 0) {
+                    alert('Please select at least 1 map for your rotation.')
+                    return
+                  }
+                  setStep(3)
+                }}
                 className="bg-battle-red text-white py-3.5 px-8 font-headline-sm text-sm uppercase border-2 border-ink-black shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all cursor-pointer font-bold tracking-wider"
               >
-                NEXT: REVIEW & HOST →
+                NEXT: REVIEW & HOST ({selectedMaps.length}) →
               </button>
             </div>
           </div>
@@ -394,17 +654,17 @@ export default function CreateLobby() {
         {/* STEP 3: Review & Host */}
         {step === 3 && (
           <div
-            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform rotate-1 flex flex-col gap-6"
+            className="bg-white border-2 border-ink-black shadow-hard p-6 md:p-8 transform rotate-0.5 flex flex-col gap-6"
             style={{
               clipPath:
-                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+                'polygon(0 0, 100% 0, 100% 98%, 95% 100%, 90% 98%, 85% 100%, 80% 98%, 75% 100%, 70% 98%, 65% 100%, 60% 98%, 55% 100%, 50% 98%, 45% 100%, 40% 98%, 35% 100%, 30% 98%, 25% 100%, 20% 98%, 15% 100%, 10% 98%, 5% 100%, 0 98%)'
             }}
           >
             <h2 className="font-headline-sm text-xl uppercase border-b-2 border-dashed border-ink-black pb-2 text-ink-black font-bold">
               REVIEW SCRIM SUMMARY
             </h2>
 
-            <div className="grid grid-cols-2 gap-4 bg-paper-cream p-4 border-2 border-ink-black shadow-tape">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-paper-cream p-4 border-2 border-ink-black shadow-tape">
               <div>
                 <span className="font-label-bold text-xs uppercase text-on-surface-variant block font-bold">
                   Format
@@ -437,6 +697,38 @@ export default function CreateLobby() {
               </div>
             </div>
 
+            {/* Selected Map Set Preview */}
+            {selectedMaps.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <label className="font-headline-sm text-xs uppercase text-ink-black font-bold">
+                  DRAFTED MAP ROTATION:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {selectedMaps.map((m, idx) => {
+                    const info = getModeInfo(m.mode)
+                    return (
+                      <div
+                        key={m.id}
+                        className="bg-[#FAF5EA] border-2 border-ink-black p-2 flex items-center gap-2.5 shadow-tape"
+                      >
+                        <span className="bg-battle-red text-white text-xs font-headline-sm w-5 h-5 rounded-full flex items-center justify-center font-bold flex-shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="overflow-hidden">
+                          <div className="text-xs font-headline-sm uppercase truncate text-ink-black font-bold">
+                            {m.map_name || m.name}
+                          </div>
+                          <span className="text-[10px] font-label-bold uppercase text-on-surface-variant">
+                            {info.icon} {m.mode || '3V3'}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Optional Host Notes */}
             <div className="flex flex-col gap-2">
               <label className="font-headline-sm text-sm uppercase text-ink-black font-bold">LOBBY NOTES / RULES</label>
@@ -453,7 +745,7 @@ export default function CreateLobby() {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="bg-[#FAF5EA] text-ink-black py-3 px-6 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-hard-sm hover:bg-white font-bold"
+                className="bg-[#FAF5EA] text-ink-black py-3 px-6 font-headline-sm text-xs uppercase border-2 border-ink-black shadow-hard-sm hover:bg-white font-bold cursor-pointer"
               >
                 ← BACK
               </button>

@@ -39,6 +39,33 @@ const FALLBACK_ENVIRONMENTS = [
   { id: '20', name: 'Rooftop Court', imageUrl: 'https://cdn.brawlify.com/gamemode/header/Basket-Brawl-2v2.png' }
 ]
 
+export const MODE_CONFIG = {
+  'Knockout': { icon: '🏆', color: 'bg-scream-yellow text-ink-black', border: 'border-ink-black' },
+  'Bounty': { icon: '🎯', color: 'bg-electric-blue text-white', border: 'border-ink-black' },
+  'Gem Grab': { icon: '💎', color: 'bg-[#9333EA] text-white', border: 'border-ink-black' },
+  'Brawl Ball': { icon: '⚽', color: 'bg-acid-green text-ink-black', border: 'border-ink-black' },
+  'Hot Zone': { icon: '⭐', color: 'bg-[#EA580C] text-white', border: 'border-ink-black' },
+  'Heist': { icon: '🔫', color: 'bg-battle-red text-white', border: 'border-ink-black' },
+  'Wipeout': { icon: '👑', color: 'bg-[#E11D48] text-white', border: 'border-ink-black' },
+  'Duels': { icon: '⚔️', color: 'bg-amber-600 text-white', border: 'border-ink-black' },
+  'Siege': { icon: '⚙️', color: 'bg-slate-700 text-white', border: 'border-ink-black' },
+  'Showdown': { icon: '💀', color: 'bg-emerald-700 text-white', border: 'border-ink-black' },
+  'Custom': { icon: '⚡', color: 'bg-ink-black text-white', border: 'border-ink-black' }
+}
+
+export function getModeInfo(modeName) {
+  if (!modeName) return { icon: '⚡', color: 'bg-ink-black text-white', border: 'border-ink-black', name: 'Custom' }
+  const clean = String(modeName).trim()
+  if (MODE_CONFIG[clean]) {
+    return { ...MODE_CONFIG[clean], name: clean }
+  }
+  const found = Object.keys(MODE_CONFIG).find((k) => k.toLowerCase() === clean.toLowerCase())
+  if (found) {
+    return { ...MODE_CONFIG[found], name: found }
+  }
+  return { icon: '⚡', color: 'bg-ink-black text-white', border: 'border-ink-black', name: clean }
+}
+
 export function fixBannerUrl(url) {
   if (!url || typeof url !== 'string') return ''
   return url.replace(/cdn-misc\.brawlify\.com/g, 'cdn.brawlify.com')
