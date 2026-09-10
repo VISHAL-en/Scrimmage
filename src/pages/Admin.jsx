@@ -68,7 +68,7 @@ export default function Admin() {
         { count: messagesCount },
         { count: reportsCount }
       ] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('public_profiles').select('*', { count: 'exact', head: true }),
         supabase.from('lobbies').select('*', { count: 'exact', head: true }),
         supabase.from('lobbies').select('*', { count: 'exact', head: true }).eq('status', 'open'),
         supabase.from('teams').select('*', { count: 'exact', head: true }),
@@ -134,10 +134,7 @@ export default function Admin() {
   const fetchUsers = async () => {
     setUsersLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const { data, error } = await supabase.rpc('get_admin_profiles')
 
       if (error) throw error
       setUsers(data || [])
@@ -257,10 +254,10 @@ export default function Admin() {
     if (!window.confirm(`Are you sure you want to ${action} ${userName}?`)) return
     setActionInProgress(true)
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_banned: !currentBanStatus })
-        .eq('id', userId)
+      const { error } = await supabase.rpc('admin_set_user_ban', {
+        target_user_id: userId,
+        ban_status: !currentBanStatus
+      })
 
       if (error) throw error
       showSuccess(`${userName} has been ${action}ned.`)
