@@ -33,7 +33,7 @@ export default function PlayerProfile() {
     const loadProfileAndTeam = async () => {
       try {
         const { data: profData, error: profErr } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('*')
           .eq('id', profileId)
           .single()
