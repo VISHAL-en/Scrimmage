@@ -222,38 +222,43 @@ export default function TeamProfile() {
 
   const handleSearchPlayer = async (e) => {
     if (e) e.preventDefault()
-    if (!searchTag.trim()) return
+    const cleanTag = searchTag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+    if (!cleanTag) return
 
     setSearchingPlayer(true)
     setSearchError(null)
     setSearchResult(null)
 
-    const cleanTag = searchTag.trim().toUpperCase().replace(/\s+/g, '')
-    const formattedTag = cleanTag.startsWith('#') ? cleanTag : `#${cleanTag}`
-    const rawTag = cleanTag.startsWith('#') ? cleanTag.slice(1) : cleanTag
-
     try {
-      const { data, error: searchErr } = await supabase
+      const { data: candidates, error: searchErr } = await supabase
         .from('public_profiles')
         .select('id, display_name, brawl_tag, main_brawler_id, main_brawler_name, main_brawler_icon_url')
-        .or(`brawl_tag.ilike.${formattedTag},brawl_tag.ilike.${rawTag},brawl_tag.ilike.${cleanTag}`)
-        .maybeSingle()
+        .or(`brawl_tag.ilike.${cleanTag},brawl_tag.ilike.%23${cleanTag},brawl_tag.ilike.#${cleanTag}`)
 
       if (searchErr) throw searchErr
 
-      if (!data) {
-        setSearchError(`No registered player found with tag "${formattedTag}". Make sure the player has signed up on Scrimmage.`)
+      const list = candidates || []
+      if (list.length === 0) {
+        setSearchError(`No registered player found with tag "#${cleanTag}". Make sure the player has signed up on Scrimmage.`)
         return
       }
 
-      // Check if player is already in this team
-      const isAlreadyMember = members.some((m) => m.profile_id === data.id)
-      if (isAlreadyMember) {
-        setSearchError(`Player "${data.display_name}" is already in this squad roster.`)
+      // Find candidate who is not already in the squad and not the current captain
+      const availableCandidate = list.find(
+        (c) => !members.some((m) => m.profile_id === c.id) && c.id !== session?.user?.id
+      )
+
+      if (!availableCandidate) {
+        const firstMatch = list[0]
+        if (firstMatch.id === session?.user?.id) {
+          setSearchError('You are the captain of this squad.')
+        } else {
+          setSearchError(`Player "${firstMatch.display_name}" is already in this squad roster.`)
+        }
         return
       }
 
-      setSearchResult(data)
+      setSearchResult(availableCandidate)
     } catch (err) {
       console.error('Error searching player by tag:', err)
       setSearchError(err.message || 'Failed to search player.')
