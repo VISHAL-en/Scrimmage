@@ -22,6 +22,14 @@ export default function TeamProfile() {
   const [actionLoading, setActionLoading] = useState(false)
   const [userTeamCount, setUserTeamCount] = useState(0)
 
+  // Add Member by Tag State
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false)
+  const [searchTag, setSearchTag] = useState('')
+  const [searchingPlayer, setSearchingPlayer] = useState(false)
+  const [searchResult, setSearchResult] = useState(null)
+  const [searchError, setSearchError] = useState(null)
+  const [addingMember, setAddingMember] = useState(false)
+
   const fetchTeamData = async () => {
     if (!id) return
     setLoading(true)
@@ -212,6 +220,92 @@ export default function TeamProfile() {
     }
   }
 
+  const handleSearchPlayer = async (e) => {
+    if (e) e.preventDefault()
+    if (!searchTag.trim()) return
+
+    setSearchingPlayer(true)
+    setSearchError(null)
+    setSearchResult(null)
+
+    const cleanTag = searchTag.trim().toUpperCase().replace(/\s+/g, '')
+    const formattedTag = cleanTag.startsWith('#') ? cleanTag : `#${cleanTag}`
+    const rawTag = cleanTag.startsWith('#') ? cleanTag.slice(1) : cleanTag
+
+    try {
+      const { data, error: searchErr } = await supabase
+        .from('public_profiles')
+        .select('id, display_name, brawl_tag, avatar_url, main_brawler_id, main_brawler_name, main_brawler_icon_url')
+        .or(`brawl_tag.ilike.${formattedTag},brawl_tag.ilike.${rawTag},brawl_tag.ilike.${cleanTag}`)
+        .maybeSingle()
+
+      if (searchErr) throw searchErr
+
+      if (!data) {
+        setSearchError(`No registered player found with tag "${formattedTag}". Make sure the player has signed up on Scrimmage.`)
+        return
+      }
+
+      // Check if player is already in this team
+      const isAlreadyMember = members.some((m) => m.profile_id === data.id)
+      if (isAlreadyMember) {
+        setSearchError(`Player "${data.display_name}" is already in this squad roster.`)
+        return
+      }
+
+      setSearchResult(data)
+    } catch (err) {
+      console.error('Error searching player by tag:', err)
+      setSearchError(err.message || 'Failed to search player.')
+    } finally {
+      setSearchingPlayer(false)
+    }
+  }
+
+  const handleAddPlayerToTeam = async () => {
+    if (!searchResult || !team || !isOwner) return
+    if (approvedRoster.length >= 3) {
+      alert('Squad has already reached the maximum limit of 3 players.')
+      return
+    }
+
+    setAddingMember(true)
+    try {
+      const { error: insertErr } = await supabase
+        .from('team_members')
+        .insert([
+          {
+            team_id: team.id,
+            profile_id: searchResult.id,
+            role: 'member'
+          }
+        ])
+
+      if (insertErr) throw insertErr
+
+      // Success: close modal, reset state, and refresh roster
+      setIsAddMemberModalOpen(false)
+      setSearchTag('')
+      setSearchResult(null)
+      setSearchError(null)
+      await fetchTeamData()
+    } catch (err) {
+      console.error('Error adding player to squad:', err)
+      const msg = (err.message || '').toLowerCase()
+      const isLimitErr =
+        msg.includes('limit') ||
+        msg.includes('maximum') ||
+        (err.code === 'P0001' && msg.includes('3'))
+      setSearchError(
+        isLimitErr
+          ? `This player has already reached the 3-team limit.`
+          : (err.message || 'Failed to add player to squad.')
+      )
+    } finally {
+      setAddingMember(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-paper-cream">
@@ -344,24 +438,42 @@ export default function TeamProfile() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
           {/* Left Column: Roster & Pending Requests */}
           <section className="lg:col-span-7 space-y-8">
-            <div className="flex justify-between items-center border-b-4 border-ink-black pb-3">
+            <div className="flex justify-between items-center border-b-4 border-ink-black pb-3 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h2 className="font-headline-lg text-headline-lg uppercase text-ink-black font-bold tracking-tight">
                   ROSTER
                 </h2>
                 <span className="font-headline-sm text-sm bg-ink-black text-white px-2.5 py-0.5 border border-ink-black font-bold shadow-tape">
-                  {approvedRoster.length} / 6
+                  {approvedRoster.length} / 3
                 </span>
               </div>
 
-              {isOwner && (
-                <Link
-                  to="/create-lobby"
-                  className="text-xs font-headline-sm uppercase underline hover:text-battle-red font-bold"
-                >
-                  + Host Team Scrim
-                </Link>
-              )}
+              <div className="flex items-center gap-2">
+                {isOwner && approvedRoster.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddMemberModalOpen(true)
+                      setSearchTag('')
+                      setSearchResult(null)
+                      setSearchError(null)
+                    }}
+                    className="bg-scream-yellow text-ink-black border-2 border-ink-black px-3 py-1 font-headline-sm text-xs uppercase shadow-tape hover:translate-x-0.5 hover:translate-y-0.5 transition-all font-bold cursor-pointer flex items-center gap-1"
+                  >
+                    <span className="text-battle-red font-bold">⚡</span>
+                    <span>+ ADD PLAYER BY TAG</span>
+                  </button>
+                )}
+
+                {isOwner && (
+                  <Link
+                    to="/create-lobby"
+                    className="text-xs font-headline-sm uppercase underline hover:text-battle-red font-bold"
+                  >
+                    + Host Scrim
+                  </Link>
+                )}
+              </div>
             </div>
 
             {/* Roster Cards Grid */}
@@ -424,6 +536,38 @@ export default function TeamProfile() {
                   </div>
                 )
               })}
+
+              {/* Empty Slots up to 3 */}
+              {Array.from({ length: Math.max(0, 3 - approvedRoster.length) }).map((_, slotIdx) => (
+                <button
+                  key={`empty-slot-${slotIdx}`}
+                  type="button"
+                  onClick={() => {
+                    if (isOwner) {
+                      setIsAddMemberModalOpen(true)
+                      setSearchTag('')
+                      setSearchResult(null)
+                      setSearchError(null)
+                    }
+                  }}
+                  className={`border-2 border-ink-black border-dashed p-4 flex flex-col items-center justify-center min-h-[110px] transform ${
+                    slotIdx % 2 === 0 ? '-rotate-1' : 'rotate-1'
+                  } ${
+                    isOwner
+                      ? 'bg-paper-cream/60 hover:bg-scream-yellow/20 hover:border-solid transition-all cursor-pointer'
+                      : 'bg-paper-cream/30 opacity-60 cursor-default'
+                  }`}
+                >
+                  <span className="font-headline-sm text-sm uppercase text-ink-black/70 font-bold">
+                    + OPEN SQUAD SLOT
+                  </span>
+                  {isOwner && (
+                    <span className="text-[10px] font-label-bold uppercase text-battle-red font-bold mt-1">
+                      Click to add player by tag
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
             {/* Pending Requests (Owner Only) */}
@@ -508,6 +652,124 @@ export default function TeamProfile() {
           </section>
         </div>
       </main>
+
+      {/* Add Player by Tag Modal (Captain Only) */}
+      {isAddMemberModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-black/60 backdrop-blur-xs">
+          <div
+            className="bg-white border-2 border-ink-black shadow-hard w-full max-w-md p-6 relative transform rotate-1 flex flex-col gap-5 animate-content-settle"
+            style={{
+              clipPath:
+                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+            }}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-start border-b-2 border-dashed border-ink-black pb-3">
+              <div>
+                <div className="bg-scream-yellow text-ink-black border border-ink-black px-2.5 py-0.5 font-headline-sm text-xs uppercase -rotate-2 w-max shadow-tape mb-1 flex items-center gap-1 font-bold">
+                  <span className="text-battle-red font-bold">⚡</span>
+                  <span>CAPTAIN ROSTER TOOL</span>
+                </div>
+                <h2 className="font-headline-md text-2xl uppercase tracking-tight text-ink-black font-bold">
+                  ADD PLAYER BY TAG
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddMemberModalOpen(false)}
+                className="text-ink-black hover:text-battle-red font-bold text-xl px-2 py-1 cursor-pointer"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="font-body-md text-xs text-on-surface-variant font-bold">
+              Enter the Brawl Stars player tag of a player registered on Scrimmage:
+            </p>
+
+            {/* Search Input Form */}
+            <form onSubmit={handleSearchPlayer} className="flex gap-2">
+              <input
+                type="text"
+                value={searchTag}
+                onChange={(e) => setSearchTag(e.target.value)}
+                placeholder="e.g. #8YUU98QP or 8YUU98QP"
+                className="flex-grow bg-[#FAF5EA] border-2 border-ink-black px-3.5 py-2 text-sm font-headline-sm uppercase tracking-wider text-ink-black focus:outline-none focus:bg-scream-yellow/20 font-bold"
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={searchingPlayer || !searchTag.trim()}
+                className="bg-ink-black text-white border-2 border-ink-black px-4 py-2 font-headline-sm text-xs uppercase shadow-tape hover:bg-battle-red transition-all cursor-pointer font-bold disabled:opacity-50"
+              >
+                {searchingPlayer ? 'SEARCHING...' : 'SEARCH 🔍'}
+              </button>
+            </form>
+
+            {/* Error Message */}
+            {searchError && (
+              <div className="p-3 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-label-bold text-xs uppercase font-bold flex items-center gap-2">
+                <span>⚠</span>
+                <span>{searchError}</span>
+              </div>
+            )}
+
+            {/* Player Found Result Card */}
+            {searchResult && (
+              <div className="bg-[#FAF5EA] border-2 border-ink-black p-4 shadow-tape flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-label-bold text-[10px] uppercase text-on-surface-variant font-bold">
+                    PLAYER FOUND ✓
+                  </span>
+                  <span className="text-[10px] bg-acid-green border border-ink-black px-2 py-0.5 font-headline-sm uppercase font-bold">
+                    REGISTERED
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 bg-white border border-ink-black p-3 shadow-xs">
+                  <div className="w-12 h-12 bg-paper-cream border border-ink-black p-0.5 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                    <UserAvatar
+                      src={searchResult.main_brawler_icon_url || searchResult.avatar_url}
+                      alt={searchResult.display_name}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+
+                  <div className="truncate">
+                    <span className="font-headline-sm text-base uppercase text-ink-black block truncate font-bold">
+                      {searchResult.display_name}
+                    </span>
+                    <span className="font-body-md text-xs text-on-surface-variant block font-bold">
+                      {searchResult.brawl_tag || 'NO TAG'} {searchResult.main_brawler_name ? `· Main: ${searchResult.main_brawler_name}` : ''}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddPlayerToTeam}
+                  disabled={addingMember}
+                  className="w-full bg-primary-container text-ink-black border-2 border-ink-black py-2.5 px-4 font-headline-sm text-xs uppercase shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold disabled:opacity-50"
+                >
+                  {addingMember ? 'ADDING TO SQUAD...' : 'ADD TO SQUAD ROSTER ⚡'}
+                </button>
+              </div>
+            )}
+
+            {/* Footer Buttons */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsAddMemberModalOpen(false)}
+                className="bg-paper-cream border border-ink-black px-4 py-2 text-xs font-headline-sm uppercase text-ink-black hover:bg-white transition-all cursor-pointer font-bold"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
