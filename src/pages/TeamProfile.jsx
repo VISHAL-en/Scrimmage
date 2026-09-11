@@ -235,7 +235,7 @@ export default function TeamProfile() {
     try {
       const { data, error: searchErr } = await supabase
         .from('public_profiles')
-        .select('id, display_name, brawl_tag, avatar_url, main_brawler_id, main_brawler_name, main_brawler_icon_url')
+        .select('id, display_name, brawl_tag, main_brawler_id, main_brawler_name, main_brawler_icon_url')
         .or(`brawl_tag.ilike.${formattedTag},brawl_tag.ilike.${rawTag},brawl_tag.ilike.${cleanTag}`)
         .maybeSingle()
 
@@ -730,7 +730,7 @@ export default function TeamProfile() {
                 <div className="flex items-center gap-3 bg-white border border-ink-black p-3 shadow-xs">
                   <div className="w-12 h-12 bg-paper-cream border border-ink-black p-0.5 flex-shrink-0 flex items-center justify-center overflow-hidden">
                     <UserAvatar
-                      src={searchResult.main_brawler_icon_url || searchResult.avatar_url}
+                      src={searchResult.main_brawler_icon_url}
                       alt={searchResult.display_name}
                       className="w-full h-full object-contain"
                     />
