@@ -40,6 +40,14 @@ export default function LobbyDetail() {
   const [existingMatch, setExistingMatch] = useState(null)
   const [existingMatchMaps, setExistingMatchMaps] = useState([])
   const [isLogResultsOpen, setIsLogResultsOpen] = useState(false)
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false)
+
+  // Join As Team State
+  const [isJoinTeamModalOpen, setIsJoinTeamModalOpen] = useState(false)
+  const [captainTeams, setCaptainTeams] = useState([])
+  const [captainTeamsLoading, setCaptainTeamsLoading] = useState(false)
+  const [captainTeamsError, setCaptainTeamsError] = useState(null)
+  const [selectedTeamId, setSelectedTeamId] = useState(null)
 
   // Team Code State
   const [teamCode, setTeamCode] = useState(null)
@@ -76,6 +84,65 @@ export default function LobbyDetail() {
       }
     } catch (err) {
       console.error('Error fetching team code via RPC:', err)
+    }
+  }
+
+  const fetchCaptainTeams = async () => {
+    if (!session?.user?.id) return
+    setCaptainTeamsLoading(true)
+    setCaptainTeamsError(null)
+    try {
+      const { data, error: err } = await supabase
+        .from('team_members')
+        .select(`
+          team_id,
+          role,
+          teams:team_id (
+            id,
+            name,
+            tag,
+            banner_url,
+            owner_id,
+            team_members (
+              profile_id,
+              role,
+              profiles:profile_id (
+                id,
+                display_name,
+                main_brawler_name,
+                main_brawler_icon_url,
+                brawl_tag
+              )
+            )
+          )
+        `)
+        .eq('profile_id', session.user.id)
+        .eq('role', 'owner')
+
+      if (err) throw err
+
+      const teamsList = (data || [])
+        .map((item) => item.teams)
+        .filter(Boolean)
+        .map((t) => {
+          const approvedMembers = (t.team_members || []).filter(
+            (m) => m.role === 'owner' || m.role === 'member'
+          )
+          return {
+            ...t,
+            approvedMembers
+          }
+        })
+
+      setCaptainTeams(teamsList)
+      if (teamsList.length > 0) {
+        setSelectedTeamId(teamsList[0].id)
+      }
+    } catch (err) {
+      console.error('Error fetching captain teams:', err)
+      setCaptainTeamsError(err.message || 'Failed to load your squads.')
+    } finally {
+      setCaptainTeamsLoading(false)
     }
   }
 
@@ -120,7 +187,9 @@ export default function LobbyDetail() {
         .select(`
           profile_id,
           joined_at,
-          profiles:profile_id ( id, display_name, main_brawler_name, main_brawler_icon_url, brawl_tag )
+          team_id,
+          profiles:profile_id ( id, display_name, main_brawler_name, main_brawler_icon_url, brawl_tag ),
+          teams:team_id ( id, name, tag )
         `)
         .eq('lobby_id', id)
         .order('joined_at', { ascending: true })
@@ -244,6 +313,44 @@ export default function LobbyDetail() {
     } catch (err) {
       console.error('Error joining lobby:', err)
       alert(formatActionError(err, 'Could not join lobby'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleOpenJoinAsTeam = () => {
+    setIsJoinModalOpen(false)
+    setIsJoinTeamModalOpen(true)
+    fetchCaptainTeams()
+  }
+
+  const handleJoinAsTeam = async () => {
+    const selectedTeam = captainTeams.find((t) => t.id === selectedTeamId) || captainTeams[0]
+    if (!session?.user?.id || !lobby || !selectedTeam) return
+    const memberIds = (selectedTeam.approvedMembers || []).map((m) => m.profile_id)
+    if (memberIds.length === 0) {
+      alert('This squad has no approved members.')
+      return
+    }
+    if (memberIds.length > openSlotsCount) {
+      alert(`This lobby only has ${openSlotsCount} open slots, but your squad has ${memberIds.length} members.`)
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('join_lobby_as_team', {
+        target_lobby_id: lobby.id,
+        target_team_id: selectedTeam.id,
+        selected_member_ids: memberIds
+      })
+
+      if (rpcErr) throw rpcErr
+      setIsJoinTeamModalOpen(false)
+      await fetchLobbyData()
+    } catch (err) {
+      console.error('Error joining as team:', err)
+      alert(formatActionError(err, 'Could not join lobby as team.'))
     } finally {
       setActionLoading(false)
     }
@@ -875,7 +982,14 @@ export default function LobbyDetail() {
                         <UserAvatar src={pAvatar} alt={pName} className="w-full h-full object-contain" />
                       </div>
                       <div className="truncate">
-                        <span className="font-headline-sm text-sm uppercase block truncate">{pName}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap truncate">
+                          <span className="font-headline-sm text-sm uppercase block truncate">{pName}</span>
+                          {p.teams?.tag && (
+                            <span className="text-[10px] font-label-bold uppercase bg-paper-cream border border-ink-black px-1.5 py-0.5 text-ink-black font-bold flex-shrink-0">
+                              {p.teams.tag}
+                            </span>
+                          )}
+                        </div>
                         {pMain && (
                           <span className="font-label-bold text-[10px] text-on-surface-variant block uppercase">
                             {pMain}
@@ -958,7 +1072,7 @@ export default function LobbyDetail() {
             ) : (
               <button
                 type="button"
-                onClick={handleJoin}
+                onClick={() => setIsJoinModalOpen(true)}
                 disabled={actionLoading}
                 className="w-full bg-primary-container text-ink-black border-2 border-ink-black py-4 px-6 font-headline-lg text-headline-lg uppercase -rotate-2 shadow-hard hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer disabled:opacity-50"
               >
@@ -1198,6 +1312,361 @@ export default function LobbyDetail() {
           navigate(`/match/${matchId}`)
         }}
       />
+
+      {/* Join Scrim Options Modal */}
+      {isJoinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-black/60 backdrop-blur-xs">
+          <div
+            className="bg-white border-2 border-ink-black shadow-hard w-full max-w-md p-6 relative transform rotate-1 flex flex-col gap-5 animate-content-settle"
+            style={{
+              clipPath:
+                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+            }}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-start border-b-2 border-dashed border-ink-black pb-3">
+              <div>
+                <div className="bg-scream-yellow text-ink-black border border-ink-black px-2.5 py-0.5 font-headline-sm text-xs uppercase -rotate-2 w-max shadow-tape mb-1 flex items-center gap-1 font-bold">
+                  <span className="text-battle-red font-bold">⚡</span>
+                  <span>CHOOSE ENTRY TYPE</span>
+                </div>
+                <h2 className="font-headline-md text-2xl uppercase tracking-tight text-ink-black font-bold">
+                  JOIN SCRIM
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsJoinModalOpen(false)}
+                className="text-ink-black hover:text-battle-red font-bold text-xl px-2 py-1 cursor-pointer"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="font-body-md text-xs text-on-surface-variant font-bold">
+              Select how you would like to enter this lobby:
+            </p>
+
+            {/* Options */}
+            <div className="flex flex-col gap-3">
+              {/* Option 1: Join as Player */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsJoinModalOpen(false)
+                  handleJoin()
+                }}
+                disabled={actionLoading}
+                className="bg-primary-container text-ink-black border-2 border-ink-black p-4 text-left shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all cursor-pointer font-bold flex items-center justify-between group"
+              >
+                <div>
+                  <div className="font-headline-sm text-base uppercase text-ink-black flex items-center gap-2">
+                    <span>👤 JOIN AS PLAYER</span>
+                  </div>
+                  <p className="font-body-md text-xs text-on-surface-variant font-medium mt-0.5">
+                    Enter this scrim individually as a solo player.
+                  </p>
+                </div>
+                <span className="text-xl font-bold group-hover:translate-x-1 transition-transform">→</span>
+              </button>
+
+              {/* Option 2: Join as Team */}
+              <button
+                type="button"
+                onClick={handleOpenJoinAsTeam}
+                className="bg-[#FAF5EA] text-ink-black border-2 border-ink-black p-4 text-left shadow-hard hover:bg-scream-yellow hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all cursor-pointer font-bold flex items-center justify-between group"
+              >
+                <div>
+                  <div className="font-headline-sm text-base uppercase text-ink-black flex items-center gap-2">
+                    <span>🛡️ JOIN AS TEAM</span>
+                  </div>
+                  <p className="font-body-md text-xs text-on-surface-variant font-medium mt-0.5">
+                    Register your squad members together as a team.
+                  </p>
+                </div>
+                <span className="text-xl font-bold group-hover:translate-x-1 transition-transform">→</span>
+              </button>
+            </div>
+
+            {/* Footer Cancel */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsJoinModalOpen(false)}
+                className="bg-paper-cream border border-ink-black px-4 py-2 text-xs font-headline-sm uppercase text-ink-black hover:bg-white transition-all cursor-pointer font-bold"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Join Scrim As Team Modal */}
+      {isJoinTeamModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-black/60 backdrop-blur-xs">
+          <div
+            className="bg-white border-2 border-ink-black shadow-hard w-full max-w-lg p-6 relative transform rotate-1 flex flex-col gap-5 animate-content-settle max-h-[90vh] overflow-y-auto"
+            style={{
+              clipPath:
+                'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 90% 98%, 85% 100%, 80% 97%, 75% 100%, 70% 98%, 65% 100%, 60% 97%, 55% 100%, 50% 98%, 45% 100%, 40% 97%, 35% 100%, 30% 98%, 25% 100%, 20% 97%, 15% 100%, 10% 98%, 5% 100%, 0 97%)'
+            }}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-start border-b-2 border-dashed border-ink-black pb-3">
+              <div>
+                <div className="bg-scream-yellow text-ink-black border border-ink-black px-2.5 py-0.5 font-headline-sm text-xs uppercase -rotate-2 w-max shadow-tape mb-1 flex items-center gap-1 font-bold">
+                  <span className="text-battle-red font-bold">🛡️</span>
+                  <span>JOIN AS TEAM</span>
+                </div>
+                <h2 className="font-headline-md text-2xl uppercase tracking-tight text-ink-black font-bold">
+                  SELECT YOUR SQUAD
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsJoinTeamModalOpen(false)}
+                className="text-ink-black hover:text-battle-red font-bold text-xl px-2 py-1 cursor-pointer"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            {captainTeamsLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+                <span className="text-battle-red font-bold text-3xl animate-bounce">⚡</span>
+                <span className="font-headline-sm text-sm uppercase animate-pulse">
+                  LOADING YOUR SQUADS...
+                </span>
+              </div>
+            ) : captainTeamsError ? (
+              <div className="p-4 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-headline-sm text-xs uppercase font-bold">
+                ⚠ {captainTeamsError}
+              </div>
+            ) : captainTeams.length === 0 ? (
+              /* Empty State: Not captain of any squad */
+              <div className="flex flex-col gap-4 py-2">
+                <div className="bg-[#FAF5EA] border-2 border-ink-black p-5 text-center flex flex-col items-center gap-2 shadow-tape">
+                  <span className="text-3xl">🛡️</span>
+                  <h3 className="font-headline-sm text-base uppercase text-ink-black font-bold">
+                    NO CAPTAINED SQUADS FOUND
+                  </h3>
+                  <p className="font-body-md text-xs text-on-surface-variant font-medium max-w-xs">
+                    Only team captains/owners can register a squad for scrims. Create a squad first or join individually as a solo player.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsJoinTeamModalOpen(false)
+                      setIsJoinModalOpen(true)
+                    }}
+                    className="bg-paper-cream border-2 border-ink-black px-4 py-2.5 font-headline-sm text-xs uppercase text-ink-black hover:bg-white shadow-tape font-bold cursor-pointer"
+                  >
+                    ← BACK
+                  </button>
+                  <Link
+                    to="/create-team"
+                    className="bg-scream-yellow text-ink-black border-2 border-ink-black px-5 py-2.5 font-headline-sm text-xs uppercase shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 text-center font-bold"
+                  >
+                    CREATE A SQUAD ⚡
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              /* Populated State: Squad(s) Found */
+              (() => {
+                const selectedTeam = captainTeams.find((t) => t.id === selectedTeamId) || captainTeams[0]
+                const roster = selectedTeam?.approvedMembers || []
+                const slotsNeeded = roster.length
+                const notEnoughSlots = openSlotsCount < slotsNeeded
+                const alreadyJoinedMembers = roster.filter((m) =>
+                  participants.some((p) => p.profile_id === m.profile_id)
+                )
+                const hasAlreadyJoined = alreadyJoinedMembers.length > 0
+                const isOverLimit = roster.length > 3
+                const isEmptyRoster = roster.length === 0
+                const cannotConfirm =
+                  actionLoading || notEnoughSlots || hasAlreadyJoined || isOverLimit || isEmptyRoster
+
+                return (
+                  <div className="flex flex-col gap-4">
+                    {/* Multi-Team Selector if user captains > 1 team */}
+                    {captainTeams.length > 1 && (
+                      <div>
+                        <span className="font-label-bold text-xs uppercase text-on-surface-variant block font-bold mb-2">
+                          Select Squad to Join With:
+                        </span>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {captainTeams.map((t) => {
+                            const isSelected = t.id === selectedTeam?.id
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setSelectedTeamId(t.id)}
+                                className={`px-3 py-2 border-2 border-ink-black text-xs font-headline-sm uppercase transition-all cursor-pointer font-bold ${
+                                  isSelected
+                                    ? 'bg-scream-yellow text-ink-black shadow-hard translate-x-0.5 translate-y-0.5'
+                                    : 'bg-paper-cream text-ink-black hover:bg-white shadow-tape'
+                                }`}
+                              >
+                                {t.tag ? `${t.tag} ` : ''}{t.name}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Selected Squad Card */}
+                    <div className="bg-[#FAF5EA] border-2 border-ink-black p-4 shadow-tape flex flex-col gap-3">
+                      <div className="flex items-center justify-between border-b border-ink-black/20 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-headline-md text-lg uppercase text-ink-black font-bold">
+                            {selectedTeam.tag ? `${selectedTeam.tag} ` : ''}{selectedTeam.name}
+                          </span>
+                          <span className="bg-scream-yellow text-ink-black text-[10px] font-label-bold uppercase border border-ink-black px-1.5 py-0.2 font-bold">
+                            👑 CAPTAIN
+                          </span>
+                        </div>
+                        <span className="font-label-bold text-xs uppercase bg-white border border-ink-black px-2 py-0.5 font-bold">
+                          {roster.length} / 3 MEMBERS
+                        </span>
+                      </div>
+
+                      {/* Roster Members List */}
+                      <div>
+                        <span className="font-label-bold text-[11px] uppercase text-on-surface-variant block font-bold mb-1.5">
+                          SQUAD ROSTER:
+                        </span>
+                        <div className="flex flex-col gap-2">
+                          {roster.map((m) => {
+                            const mName = m.profiles?.display_name || 'BRAWLER'
+                            const mAvatar = m.profiles?.main_brawler_icon_url
+                            const mMain = m.profiles?.main_brawler_name
+                            const mTag = m.profiles?.brawl_tag
+                            const isCaptain = m.role === 'owner' || m.profile_id === selectedTeam.owner_id
+                            const isAlreadyInLobby = participants.some((p) => p.profile_id === m.profile_id)
+
+                            return (
+                              <div
+                                key={m.profile_id}
+                                className={`bg-white border border-ink-black p-2 flex items-center justify-between shadow-xs ${
+                                  isAlreadyInLobby ? 'bg-battle-red/10 border-battle-red' : ''
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 overflow-hidden">
+                                  <div className="w-7 h-7 border border-ink-black bg-paper-cream flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                    <UserAvatar src={mAvatar} alt={mName} className="w-full h-full object-contain" />
+                                  </div>
+                                  <div className="truncate">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="font-headline-sm text-xs uppercase truncate block font-bold">
+                                        {mName}
+                                      </span>
+                                      {isAlreadyInLobby && (
+                                        <span className="text-[9px] bg-battle-red text-white font-label-bold uppercase px-1 py-0.2">
+                                          ALREADY JOINED
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="font-label-bold text-[10px] text-on-surface-variant block uppercase">
+                                      {mTag || (mMain ? `Main: ${mMain}` : '')}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <span className={`text-[10px] font-label-bold uppercase px-1.5 py-0.5 border ${
+                                  isCaptain
+                                    ? 'bg-scream-yellow border-ink-black text-ink-black font-bold'
+                                    : 'bg-paper-cream border-ink-black text-ink-black/70'
+                                }`}>
+                                  {isCaptain ? 'CAPTAIN' : 'MEMBER'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Warnings & Alerts */}
+                    {notEnoughSlots && (
+                      <div className="p-3 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-label-bold text-xs uppercase font-bold flex items-center gap-2">
+                        <span>⚠</span>
+                        <span>
+                          NOT ENOUGH SLOTS: Scrim has only {openSlotsCount} open slot(s), but your squad has {slotsNeeded} members.
+                        </span>
+                      </div>
+                    )}
+
+                    {hasAlreadyJoined && (
+                      <div className="p-3 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-label-bold text-xs uppercase font-bold flex items-center gap-2">
+                        <span>⚠</span>
+                        <span>
+                          MEMBER ALREADY JOINED: {alreadyJoinedMembers.map((m) => m.profiles?.display_name || 'Member').join(', ')} is already in this lobby.
+                        </span>
+                      </div>
+                    )}
+
+                    {isOverLimit && (
+                      <div className="p-3 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-label-bold text-xs uppercase font-bold flex items-center gap-2">
+                        <span>⚠</span>
+                        <span>Squad exceeds the maximum 3-member tournament limit.</span>
+                      </div>
+                    )}
+
+                    {isEmptyRoster && (
+                      <div className="p-3 bg-[#FFE5E7] text-battle-red border-2 border-ink-black font-label-bold text-xs uppercase font-bold flex items-center gap-2">
+                        <span>⚠</span>
+                        <span>This squad has no approved members.</span>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col sm:flex-row gap-2 justify-between items-center pt-2 border-t border-dashed border-ink-black">
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsJoinTeamModalOpen(false)
+                            setIsJoinModalOpen(true)
+                          }}
+                          className="flex-1 sm:flex-initial bg-paper-cream border border-ink-black px-3.5 py-2 font-headline-sm text-xs uppercase text-ink-black hover:bg-white transition-all cursor-pointer font-bold"
+                        >
+                          ← BACK
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsJoinTeamModalOpen(false)}
+                          className="flex-1 sm:flex-initial bg-paper-cream border border-ink-black px-3.5 py-2 font-headline-sm text-xs uppercase text-ink-black hover:bg-white transition-all cursor-pointer font-bold"
+                        >
+                          CANCEL
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleJoinAsTeam}
+                        disabled={cannotConfirm}
+                        className="w-full sm:w-auto bg-primary-container text-ink-black border-2 border-ink-black px-6 py-2.5 font-headline-sm text-xs uppercase shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {actionLoading ? 'REGISTERING SQUAD...' : 'CONFIRM TEAM JOIN ⚡'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
