@@ -114,13 +114,27 @@ export default function Dashboard() {
     if (!session?.user?.id || !teamId) return
     setInviteActionLoading(true)
     try {
-      const { error: acceptErr } = await supabase
-        .from('team_members')
-        .update({ role: 'member' })
-        .eq('team_id', teamId)
-        .eq('profile_id', session.user.id)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('accept_team_invitation', {
+        p_team_id: teamId
+      })
 
-      if (acceptErr) throw acceptErr
+      if (rpcErr) {
+        const { data: updateData, error: updateErr } = await supabase
+          .from('team_members')
+          .update({ role: 'member' })
+          .eq('team_id', teamId)
+          .eq('profile_id', session.user.id)
+          .select()
+
+        if (updateErr) throw updateErr
+        if (!updateData || updateData.length === 0) {
+          throw new Error(
+            rpcErr.message ||
+              'Could not update invitation. Please ensure the latest Supabase SQL migration has been applied.'
+          )
+        }
+      }
+
       alert('Squad invitation accepted! You are now part of the roster.')
       await fetchDashboardData()
     } catch (err) {
@@ -141,13 +155,20 @@ export default function Dashboard() {
     if (!window.confirm('Decline this squad invitation?')) return
     setInviteActionLoading(true)
     try {
-      const { error: declineErr } = await supabase
-        .from('team_members')
-        .delete()
-        .eq('team_id', teamId)
-        .eq('profile_id', session.user.id)
+      const { error: rpcErr } = await supabase.rpc('decline_team_invitation', {
+        p_team_id: teamId
+      })
 
-      if (declineErr) throw declineErr
+      if (rpcErr) {
+        const { error: declineErr } = await supabase
+          .from('team_members')
+          .delete()
+          .eq('team_id', teamId)
+          .eq('profile_id', session.user.id)
+
+        if (declineErr) throw declineErr
+      }
+
       await fetchDashboardData()
     } catch (err) {
       console.error('Error declining invite:', err)

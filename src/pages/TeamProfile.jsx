@@ -145,17 +145,38 @@ export default function TeamProfile() {
     }
     setActionLoading(true)
     try {
-      const { error: acceptErr } = await supabase
-        .from('team_members')
-        .update({ role: 'member' })
-        .eq('team_id', team.id)
-        .eq('profile_id', currentUserId)
+      // First attempt: Call secure RPC function
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('accept_team_invitation', {
+        p_team_id: team.id
+      })
 
-      if (acceptErr) throw acceptErr
+      if (rpcErr) {
+        // If RPC function not yet created in db or failed, try direct UPDATE fallback
+        const { data: updateData, error: updateErr } = await supabase
+          .from('team_members')
+          .update({ role: 'member' })
+          .eq('team_id', team.id)
+          .eq('profile_id', currentUserId)
+          .select()
+
+        if (updateErr) throw updateErr
+        if (!updateData || updateData.length === 0) {
+          throw new Error(
+            rpcErr.message ||
+              'Could not update invitation. Please ensure the latest Supabase SQL migration has been applied.'
+          )
+        }
+      }
+
       await fetchTeamData()
     } catch (err) {
       console.error('Error accepting squad invitation:', err)
-      alert(err.message || 'Failed to accept invitation.')
+      const msg = (err.message || '').toLowerCase()
+      const isLimitErr =
+        msg.includes('limit') ||
+        msg.includes('maximum') ||
+        (err.code === 'P0001' && msg.includes('3'))
+      alert(isLimitErr ? "You've reached the 3-team limit." : (err.message || 'Failed to accept invitation.'))
     } finally {
       setActionLoading(false)
     }
@@ -166,13 +187,20 @@ export default function TeamProfile() {
     if (!window.confirm('Decline this squad invitation?')) return
     setActionLoading(true)
     try {
-      const { error: declineErr } = await supabase
-        .from('team_members')
-        .delete()
-        .eq('team_id', team.id)
-        .eq('profile_id', currentUserId)
+      const { error: rpcErr } = await supabase.rpc('decline_team_invitation', {
+        p_team_id: team.id
+      })
 
-      if (declineErr) throw declineErr
+      if (rpcErr) {
+        const { error: declineErr } = await supabase
+          .from('team_members')
+          .delete()
+          .eq('team_id', team.id)
+          .eq('profile_id', currentUserId)
+
+        if (declineErr) throw declineErr
+      }
+
       await fetchTeamData()
     } catch (err) {
       console.error('Error declining invitation:', err)
