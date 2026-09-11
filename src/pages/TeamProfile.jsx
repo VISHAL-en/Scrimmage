@@ -54,24 +54,42 @@ export default function TeamProfile() {
       if (teamErr) throw teamErr
       setTeam(teamData)
 
+      // Fetch team members
       const { data: membersData, error: membersErr } = await supabase
         .from('team_members')
-        .select(`
-          team_id,
-          profile_id,
-          role,
-          profiles:profile_id (
-            id,
-            display_name,
-            brawl_tag,
-            main_brawler_name,
-            main_brawler_icon_url
-          )
-        `)
+        .select('team_id, profile_id, role')
         .eq('team_id', id)
 
       if (membersErr) throw membersErr
-      setMembers(membersData || [])
+
+      // Fetch member profiles from public_profiles view (accessible by everyone)
+      const profileIds = (membersData || []).map((m) => m.profile_id)
+      let profilesMap = {}
+      if (profileIds.length > 0) {
+        const { data: profs } = await supabase
+          .from('public_profiles')
+          .select('id, display_name, brawl_tag, main_brawler_id, main_brawler_name, main_brawler_icon_url')
+          .in('id', profileIds)
+
+        if (profs) {
+          profs.forEach((p) => {
+            profilesMap[p.id] = p
+          })
+        }
+      }
+
+      const mergedMembers = (membersData || []).map((m) => ({
+        ...m,
+        profiles: profilesMap[m.profile_id] || {
+          id: m.profile_id,
+          display_name: 'BRAWLER',
+          brawl_tag: null,
+          main_brawler_name: null,
+          main_brawler_icon_url: null
+        }
+      }))
+
+      setMembers(mergedMembers)
 
       const { data: lobbiesData } = await supabase
         .from('lobbies')
@@ -109,9 +127,60 @@ export default function TeamProfile() {
   const isOwner = team?.owner_id === currentUserId || currentUserMemberRecord?.role === 'owner'
   const isApprovedMember = currentUserMemberRecord?.role === 'member'
   const isPending = currentUserMemberRecord?.role === 'pending'
+  const isInvited = currentUserMemberRecord?.role === 'invited'
 
   const approvedRoster = members.filter((m) => m.role === 'owner' || m.role === 'member')
   const pendingRequests = members.filter((m) => m.role === 'pending')
+  const pendingInvites = members.filter((m) => m.role === 'invited')
+
+  const handleAcceptInvite = async () => {
+    if (!currentUserId || !team) return
+    if (userTeamCount >= 3) {
+      alert("You've reached the 3-team limit.")
+      return
+    }
+    if (approvedRoster.length >= 3) {
+      alert('This squad is already full (3/3 members).')
+      return
+    }
+    setActionLoading(true)
+    try {
+      const { error: acceptErr } = await supabase
+        .from('team_members')
+        .update({ role: 'member' })
+        .eq('team_id', team.id)
+        .eq('profile_id', currentUserId)
+
+      if (acceptErr) throw acceptErr
+      await fetchTeamData()
+    } catch (err) {
+      console.error('Error accepting squad invitation:', err)
+      alert(err.message || 'Failed to accept invitation.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDeclineInvite = async () => {
+    if (!currentUserId || !team) return
+    if (!window.confirm('Decline this squad invitation?')) return
+    setActionLoading(true)
+    try {
+      const { error: declineErr } = await supabase
+        .from('team_members')
+        .delete()
+        .eq('team_id', team.id)
+        .eq('profile_id', currentUserId)
+
+      if (declineErr) throw declineErr
+      await fetchTeamData()
+    } catch (err) {
+      console.error('Error declining invitation:', err)
+      alert(err.message || 'Failed to decline invitation.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const handleRequestJoin = async () => {
     if (!currentUserId || !team) return
@@ -195,8 +264,10 @@ export default function TeamProfile() {
     }
   }
 
-  const handleRemoveMember = async (memberProfileId, isPendingAction = false) => {
-    const confirmMsg = isPendingAction
+  const handleRemoveMember = async (memberProfileId, isPendingAction = false, isInviteAction = false) => {
+    const confirmMsg = isInviteAction
+      ? 'Cancel this squad invitation?'
+      : isPendingAction
       ? 'Decline this join request?'
       : 'Remove this player from the team roster?'
 
@@ -282,7 +353,7 @@ export default function TeamProfile() {
           {
             team_id: team.id,
             profile_id: searchResult.id,
-            role: 'member'
+            role: 'invited'
           }
         ])
 
@@ -295,7 +366,7 @@ export default function TeamProfile() {
       setSearchError(null)
       await fetchTeamData()
     } catch (err) {
-      console.error('Error adding player to squad:', err)
+      console.error('Error sending squad invitation:', err)
       const msg = (err.message || '').toLowerCase()
       const isLimitErr =
         msg.includes('limit') ||
@@ -304,7 +375,7 @@ export default function TeamProfile() {
       setSearchError(
         isLimitErr
           ? `This player has already reached the 3-team limit.`
-          : (err.message || 'Failed to add player to squad.')
+          : (err.message || 'Failed to send squad invitation.')
       )
     } finally {
       setAddingMember(false)
@@ -407,6 +478,27 @@ export default function TeamProfile() {
               {isOwner ? (
                 <div className="bg-scream-yellow text-ink-black border-2 border-ink-black shadow-hard px-6 py-3 font-headline-sm text-sm uppercase transform -rotate-2 font-bold">
                   👑 SQUAD OWNER
+                </div>
+              ) : isInvited ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleAcceptInvite}
+                    className="bg-acid-green text-ink-black border-2 border-ink-black shadow-hard px-6 py-3 font-headline-sm text-sm uppercase transform -rotate-1 hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold tracking-wider flex items-center gap-2"
+                  >
+                    <span>⚡</span>
+                    <span>{actionLoading ? 'JOINING...' : 'ACCEPT INVITATION ✓'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleDeclineInvite}
+                    className="bg-battle-red text-white border-2 border-ink-black shadow-hard px-5 py-3 font-headline-sm text-sm uppercase transform rotate-1 hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold tracking-wider flex items-center gap-1.5"
+                  >
+                    <span>✕</span>
+                    <span>DECLINE</span>
+                  </button>
                 </div>
               ) : isApprovedMember ? (
                 <button
@@ -618,10 +710,65 @@ export default function TeamProfile() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleRemoveMember(req.profile_id, true)}
+                            onClick={() => handleRemoveMember(req.profile_id, true, false)}
                             className="bg-battle-red text-white border border-ink-black px-3 py-1 font-headline-sm text-xs uppercase shadow-tape hover:translate-x-0.5 hover:translate-y-0.5 font-bold cursor-pointer"
                           >
                             DECLINE
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Pending Invitations Sent by Captain (Owner Only) */}
+            {isOwner && pendingInvites.length > 0 && (
+              <div className="mt-8 bg-paper-cream border-2 border-ink-black p-6 shadow-hard transform -rotate-1">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-headline-sm text-lg text-ink-black uppercase font-bold flex items-center gap-2">
+                    <span className="text-battle-red">⚡</span>
+                    <span>OUTGOING SQUAD INVITATIONS ({pendingInvites.length})</span>
+                  </h3>
+                  <span className="bg-scream-yellow text-ink-black border border-ink-black text-[10px] font-headline-sm uppercase px-2 py-0.5 shadow-tape font-bold">
+                    WAITING FOR ACCEPTANCE
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {pendingInvites.map((inv) => {
+                    const prof = inv.profiles || {}
+                    return (
+                      <div
+                        key={inv.profile_id}
+                        className="bg-white border-2 border-ink-black p-3 flex items-center justify-between shadow-tape"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 border border-ink-black bg-paper-cream overflow-hidden">
+                            <UserAvatar
+                              src={prof.main_brawler_icon_url}
+                              alt={prof.display_name}
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                          <div>
+                            <span className="font-headline-sm text-sm uppercase block text-ink-black font-bold">
+                              {prof.display_name || 'INVITED PLAYER'}
+                            </span>
+                            <span className="font-body-md text-xs text-on-surface-variant font-bold">
+                              {prof.brawl_tag || 'NO TAG'} {prof.main_brawler_name ? `· Main: ${prof.main_brawler_name}` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(inv.profile_id, false, true)}
+                            className="bg-[#FFE5E7] text-battle-red border border-ink-black px-3 py-1 font-headline-sm text-xs uppercase shadow-tape hover:bg-battle-red hover:text-white transition-all font-bold cursor-pointer"
+                          >
+                            CANCEL INVITE ✕
                           </button>
                         </div>
                       </div>
@@ -757,7 +904,7 @@ export default function TeamProfile() {
                   disabled={addingMember}
                   className="w-full bg-primary-container text-ink-black border-2 border-ink-black py-2.5 px-4 font-headline-sm text-xs uppercase shadow-hard hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer font-bold disabled:opacity-50"
                 >
-                  {addingMember ? 'ADDING TO SQUAD...' : 'ADD TO SQUAD ROSTER ⚡'}
+                  {addingMember ? 'SENDING INVITATION...' : 'SEND SQUAD INVITATION ⚡'}
                 </button>
               </div>
             )}
