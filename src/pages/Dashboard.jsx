@@ -17,6 +17,7 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true)
     try {
+      const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
       const { data: openData } = await supabase
         .from('lobbies')
         .select(`
@@ -33,6 +34,7 @@ export default function Dashboard() {
           lobby_participants ( count )
         `)
         .eq('status', 'open')
+        .gt('scheduled_time', cutoff)
         .order('scheduled_time', { ascending: true })
         .limit(6)
 

@@ -575,6 +575,7 @@ export default function LobbyDetail() {
   const isParticipant = participants.some((p) => p.profile_id === session?.user?.id)
   const isFull = participants.length >= lobby.slot_count
   const isCancelled = lobby.status === 'cancelled'
+  const isExpired = new Date(lobby.scheduled_time).getTime() + 15 * 60 * 1000 < Date.now()
   const isPastLobby =
     new Date(lobby.scheduled_time).getTime() < Date.now() || lobby.status === 'completed'
   const canLogResults = isHost || isParticipant
@@ -609,6 +610,8 @@ export default function LobbyDetail() {
                   ? 'bg-battle-red text-white'
                   : existingMatch
                   ? 'bg-acid-green text-ink-black'
+                  : isExpired
+                  ? 'bg-[#EFE6D8] text-ink-black'
                   : isFull
                   ? 'bg-battle-red text-white'
                   : 'bg-scream-yellow text-ink-black'
@@ -619,6 +622,8 @@ export default function LobbyDetail() {
                   ? 'CANCELLED'
                   : existingMatch
                   ? 'MATCH COMPLETED'
+                  : isExpired
+                  ? 'EXPIRED SCRIM'
                   : isFull
                   ? 'FULL LOBBY'
                   : 'OPEN SCRIM'}
@@ -1058,14 +1063,21 @@ export default function LobbyDetail() {
             ) : isCancelled ? (
               <button
                 disabled
-                className="w-full bg-surface-container border-2 border-ink-black py-4 px-6 font-headline-sm text-headline-sm uppercase text-on-surface-variant opacity-60"
+                className="w-full bg-surface-container border-2 border-ink-black py-4 px-6 font-headline-sm text-headline-sm uppercase text-on-surface-variant opacity-60 cursor-not-allowed"
               >
                 LOBBY CANCELLED
+              </button>
+            ) : isExpired ? (
+              <button
+                disabled
+                className="w-full bg-[#EFE6D8] border-2 border-ink-black py-4 px-6 font-headline-sm text-headline-sm uppercase text-on-surface-variant opacity-70 cursor-not-allowed font-bold"
+              >
+                LOBBY EXPIRED
               </button>
             ) : isFull ? (
               <button
                 disabled
-                className="w-full bg-surface-container border-2 border-ink-black py-4 px-6 font-headline-sm text-headline-sm uppercase text-on-surface-variant opacity-60"
+                className="w-full bg-surface-container border-2 border-ink-black py-4 px-6 font-headline-sm text-headline-sm uppercase text-on-surface-variant opacity-60 cursor-not-allowed"
               >
                 LOBBY FULL
               </button>

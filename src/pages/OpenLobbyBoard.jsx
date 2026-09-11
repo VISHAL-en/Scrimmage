@@ -14,6 +14,7 @@ export default function OpenLobbyBoard() {
   const fetchLobbies = async () => {
     setLoading(true)
     try {
+      const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
       let query = supabase
         .from('lobbies')
         .select(`
@@ -30,6 +31,7 @@ export default function OpenLobbyBoard() {
           lobby_participants ( count )
         `)
         .eq('status', 'open')
+        .gt('scheduled_time', cutoff)
         .order('scheduled_time', { ascending: true })
 
       const { data, error } = await query

@@ -27,6 +27,7 @@ export default function LobbyCard({
   const isFull = participantCount >= lobby.slot_count
   const isCancelled = lobby.status === 'cancelled'
   const isFriendly = lobby.type === 'friendly'
+  const isExpired = new Date(lobby.scheduled_time).getTime() + 15 * 60 * 1000 < Date.now()
 
   const dateStr = dayjs(lobby.scheduled_time).isToday()
     ? 'TONIGHT'
@@ -87,12 +88,14 @@ export default function LobbyCard({
           className={`border-2 border-ink-black px-2.5 py-1 font-headline-sm text-xs uppercase shadow-tape flex-shrink-0 font-bold ${
             isCancelled
               ? 'bg-battle-red text-white'
+              : isExpired && !matchId
+              ? 'bg-[#EFE6D8] text-ink-black'
               : isFull
               ? 'bg-ink-black text-white'
               : 'bg-scream-yellow text-ink-black'
           }`}
         >
-          {isCancelled ? 'CANCELLED' : `${participantCount} / ${lobby.slot_count}`}
+          {isCancelled ? 'CANCELLED' : isExpired && !matchId ? 'EXPIRED' : `${participantCount} / ${lobby.slot_count}`}
         </div>
       </div>
 
