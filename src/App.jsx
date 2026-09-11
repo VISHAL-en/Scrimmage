@@ -156,6 +156,14 @@ export default function App() {
               } 
             />
             <Route 
+              path="/teams/:id" 
+              element={
+                <RequireAuth>
+                  <TeamProfile />
+                </RequireAuth>
+              } 
+            />
+            <Route 
               path="/matches" 
               element={
                 <RequireAuth>

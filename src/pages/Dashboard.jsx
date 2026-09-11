@@ -10,13 +10,36 @@ export default function Dashboard() {
   const { session, profile } = useAuth()
   const [openLobbies, setOpenLobbies] = useState([])
   const [myLobbies, setMyLobbies] = useState([])
+  const [incomingInvites, setIncomingInvites] = useState([])
+  const [inviteActionLoading, setInviteActionLoading] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true)
-      try {
-        const { data: openData } = await supabase
+  const fetchDashboardData = async () => {
+    setLoading(true)
+    try {
+      const { data: openData } = await supabase
+        .from('lobbies')
+        .select(`
+          id,
+          type,
+          scheduled_time,
+          slot_count,
+          status,
+          notes,
+          host_id,
+          profiles:host_id ( id, display_name, main_brawler_name, main_brawler_icon_url ),
+          teams:team_id ( id, name, tag ),
+          lobby_maps ( map_name, mode, order_index ),
+          lobby_participants ( count )
+        `)
+        .eq('status', 'open')
+        .order('scheduled_time', { ascending: true })
+        .limit(6)
+
+      setOpenLobbies(openData || [])
+
+      if (session?.user?.id) {
+        const { data: userLobbies } = await supabase
           .from('lobbies')
           .select(`
             id,
@@ -31,43 +54,108 @@ export default function Dashboard() {
             lobby_maps ( map_name, mode, order_index ),
             lobby_participants ( count )
           `)
-          .eq('status', 'open')
-          .order('scheduled_time', { ascending: true })
-          .limit(6)
+          .eq('host_id', session.user.id)
+          .order('scheduled_time', { ascending: false })
+          .limit(3)
 
-        setOpenLobbies(openData || [])
+        setMyLobbies(userLobbies || [])
 
-        if (session?.user?.id) {
-          const { data: userLobbies } = await supabase
-            .from('lobbies')
-            .select(`
+        // Fetch incoming squad invitations for current user
+        const { data: invites } = await supabase
+          .from('team_members')
+          .select(`
+            team_id,
+            role,
+            created_at,
+            teams:team_id (
               id,
-              type,
-              scheduled_time,
-              slot_count,
-              status,
-              notes,
-              host_id,
-              profiles:host_id ( id, display_name, main_brawler_name, main_brawler_icon_url ),
-              teams:team_id ( id, name, tag ),
-              lobby_maps ( map_name, mode, order_index ),
-              lobby_participants ( count )
-            `)
-            .eq('host_id', session.user.id)
-            .order('scheduled_time', { ascending: false })
-            .limit(3)
+              name,
+              tag,
+              banner_url,
+              owner_id
+            )
+          `)
+          .eq('profile_id', session.user.id)
+          .eq('role', 'invited')
 
-          setMyLobbies(userLobbies || [])
+        if (invites && invites.length > 0) {
+          const ownerIds = invites.map((inv) => inv.teams?.owner_id).filter(Boolean)
+          let ownersMap = {}
+          if (ownerIds.length > 0) {
+            const { data: ownersData } = await supabase
+              .from('public_profiles')
+              .select('id, display_name, brawl_tag, main_brawler_icon_url')
+              .in('id', ownerIds)
+            if (ownersData) {
+              ownersMap = Object.fromEntries(ownersData.map((o) => [o.id, o]))
+            }
+          }
+          const formattedInvites = invites.map((inv) => ({
+            ...inv,
+            ownerProfile: ownersMap[inv.teams?.owner_id] || null
+          }))
+          setIncomingInvites(formattedInvites)
+        } else {
+          setIncomingInvites([])
         }
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err)
-      } finally {
-        setLoading(false)
       }
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err)
+    } finally {
+      setLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchDashboardData()
   }, [session])
+
+  const handleAcceptInvite = async (teamId) => {
+    if (!session?.user?.id || !teamId) return
+    setInviteActionLoading(true)
+    try {
+      const { error: acceptErr } = await supabase
+        .from('team_members')
+        .update({ role: 'member' })
+        .eq('team_id', teamId)
+        .eq('profile_id', session.user.id)
+
+      if (acceptErr) throw acceptErr
+      alert('Squad invitation accepted! You are now part of the roster.')
+      await fetchDashboardData()
+    } catch (err) {
+      console.error('Error accepting squad invite:', err)
+      const msg = (err.message || '').toLowerCase()
+      const isLimitErr =
+        msg.includes('limit') ||
+        msg.includes('maximum') ||
+        (err.code === 'P0001' && msg.includes('3'))
+      alert(isLimitErr ? "You've reached the 3-team limit." : (err.message || 'Failed to accept invitation.'))
+    } finally {
+      setInviteActionLoading(false)
+    }
+  }
+
+  const handleDeclineInvite = async (teamId) => {
+    if (!session?.user?.id || !teamId) return
+    if (!window.confirm('Decline this squad invitation?')) return
+    setInviteActionLoading(true)
+    try {
+      const { error: declineErr } = await supabase
+        .from('team_members')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('profile_id', session.user.id)
+
+      if (declineErr) throw declineErr
+      await fetchDashboardData()
+    } catch (err) {
+      console.error('Error declining invite:', err)
+      alert(err.message || 'Failed to decline invitation.')
+    } finally {
+      setInviteActionLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen text-ink-black font-body-md flex flex-col relative overflow-x-hidden selection:bg-scream-yellow selection:text-ink-black">
@@ -75,8 +163,84 @@ export default function Dashboard() {
       <Navigation />
 
       {/* Main Content */}
-      <main className="flex-grow max-w-7xl mx-auto px-margin-mobile md:px-margin-desktop py-10 w-full relative z-10 flex flex-col gap-12">
+      <main className="flex-grow max-w-7xl mx-auto px-margin-mobile md:px-margin-desktop py-10 w-full relative z-10 flex flex-col gap-10">
         
+        {/* Incoming Invitations Banner if any */}
+        {incomingInvites.length > 0 && (
+          <section className="bg-scream-yellow border-4 border-ink-black shadow-hard p-6 transform -rotate-1">
+            <div className="flex items-center justify-between border-b-2 border-ink-black pb-3 mb-4 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-battle-red text-2xl animate-bounce">⚡</span>
+                <h2 className="font-headline-lg text-2xl uppercase tracking-tight text-ink-black font-bold">
+                  SQUAD INVITATIONS RECEIVED ({incomingInvites.length})
+                </h2>
+              </div>
+              <span className="bg-ink-black text-white px-3 py-1 font-headline-sm text-xs uppercase shadow-tape font-bold">
+                ACTION REQUIRED
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {incomingInvites.map((inv) => {
+                const t = inv.teams
+                const owner = inv.ownerProfile
+                if (!t) return null
+                return (
+                  <div
+                    key={t.id}
+                    className="bg-white border-2 border-ink-black shadow-hard p-4 flex flex-col justify-between gap-4 transform rotate-1"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-headline-sm text-lg uppercase text-battle-red font-bold truncate">
+                          {t.name}
+                        </span>
+                        {t.tag && (
+                          <span className="bg-ink-black text-white text-[11px] font-headline-sm px-2 py-0.5 shadow-tape font-bold">
+                            {t.tag.startsWith('[') ? t.tag : `[${t.tag}]`}
+                          </span>
+                        )}
+                      </div>
+
+                      {owner && (
+                        <p className="font-body-md text-xs text-on-surface-variant font-bold mb-2">
+                          Captain: <span className="text-ink-black">{owner.display_name || 'CAPTAIN'}</span> ({owner.brawl_tag || 'NO TAG'})
+                        </p>
+                      )}
+
+                      <Link
+                        to={`/teams/${t.id}`}
+                        className="text-xs font-headline-sm text-electric-blue underline uppercase hover:text-ink-black font-bold"
+                      >
+                        VIEW SQUAD PROFILE →
+                      </Link>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t-2 border-dashed border-ink-black">
+                      <button
+                        type="button"
+                        disabled={inviteActionLoading}
+                        onClick={() => handleAcceptInvite(t.id)}
+                        className="flex-1 bg-acid-green text-ink-black border-2 border-ink-black py-2 px-3 font-headline-sm text-xs uppercase shadow-tape hover:translate-x-0.5 hover:translate-y-0.5 font-bold cursor-pointer text-center"
+                      >
+                        ACCEPT ✓
+                      </button>
+                      <button
+                        type="button"
+                        disabled={inviteActionLoading}
+                        onClick={() => handleDeclineInvite(t.id)}
+                        className="bg-battle-red text-white border-2 border-ink-black py-2 px-3 font-headline-sm text-xs uppercase shadow-tape hover:translate-x-0.5 hover:translate-y-0.5 font-bold cursor-pointer text-center"
+                      >
+                        DECLINE ✕
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
         {/* Hero Section */}
         <section className="relative pt-4 pb-2">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
