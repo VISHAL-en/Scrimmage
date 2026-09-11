@@ -150,7 +150,8 @@ export default function CreateTeam() {
           }
         ])
 
-      if (memberError) throw memberError
+      // Ignore 23505 (unique violation) if owner membership was already auto-inserted by database trigger
+      if (memberError && memberError.code !== '23505') throw memberError
 
       navigate(`/team/${newTeamId}`)
     } catch (err) {
@@ -159,14 +160,11 @@ export default function CreateTeam() {
       if (formatted === 'Your account has been restricted.') {
         setError(formatted)
       } else {
+        const msg = (err.message || '').toLowerCase()
         const isLimitErr =
-          err.code === 'P0001' ||
-          (err.message && (
-            err.message.toLowerCase().includes('limit') ||
-            err.message.toLowerCase().includes('3') ||
-            err.message.toLowerCase().includes('maximum') ||
-            err.message.toLowerCase().includes('team_members')
-          ))
+          msg.includes('limit') ||
+          msg.includes('maximum') ||
+          (err.code === 'P0001' && msg.includes('3'))
         setError(isLimitErr ? "You've reached the 3-team limit." : (err.message || 'Failed to create team.'))
       }
     } finally {

@@ -130,14 +130,11 @@ export default function TeamProfile() {
       if (formatted === 'Your account has been restricted.') {
         alert(formatted)
       } else {
+        const msg = (err.message || '').toLowerCase()
         const isLimitErr =
-          err.code === 'P0001' ||
-          (err.message && (
-            err.message.toLowerCase().includes('limit') ||
-            err.message.toLowerCase().includes('3') ||
-            err.message.toLowerCase().includes('maximum') ||
-            err.message.toLowerCase().includes('team_members')
-          ))
+          msg.includes('limit') ||
+          msg.includes('maximum') ||
+          (err.code === 'P0001' && msg.includes('3'))
         alert(isLimitErr ? "You've reached the 3-team limit." : (err.message || 'Failed to request join.'))
       }
     } finally {
@@ -179,14 +176,11 @@ export default function TeamProfile() {
       await fetchTeamData()
     } catch (err) {
       console.error('Error accepting member:', err)
+      const msg = (err.message || '').toLowerCase()
       const isLimitErr =
-        err.code === 'P0001' ||
-        (err.message && (
-          err.message.toLowerCase().includes('limit') ||
-          err.message.toLowerCase().includes('3') ||
-          err.message.toLowerCase().includes('maximum') ||
-          err.message.toLowerCase().includes('team_members')
-        ))
+        msg.includes('limit') ||
+        msg.includes('maximum') ||
+        (err.code === 'P0001' && msg.includes('3'))
       alert(isLimitErr ? "This player has reached the 3-team limit." : (err.message || 'Failed to accept member.'))
     } finally {
       setActionLoading(false)
